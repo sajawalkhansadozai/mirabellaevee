@@ -19,7 +19,7 @@ class Logo extends StatelessWidget {
       child: Text(
         'EVVE',
         style: GoogleFonts.orbitron(
-          fontSize: 26,
+          fontSize: 13,
           fontWeight: FontWeight.w900,
           color: Colors.white,
         ),
@@ -88,8 +88,8 @@ class MagneticHover extends StatelessWidget {
 
 // ---- CTA buttons ------------------------------------------------
 
-const double _kCtaWidth = 220;
-const double _kCtaHeight = 48;
+const double _kCtaWidth = 110; // Reduced from 220 to half size
+const double _kCtaHeight = 24; // Reduced from 48 to half size
 
 class PrimaryCta extends StatelessWidget {
   const PrimaryCta({super.key, required this.text, required this.onTap});
@@ -193,22 +193,24 @@ class _ButtonBaseState extends State<_ButtonBase> {
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 22),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 11,
+            ), // Reduced from 22 to half
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
               color: widget.gradient == null ? Colors.transparent : null,
               border: widget.outline
                   ? Border.all(
                       color: _hover ? const Color(0xFF00FF88) : Colors.white24,
-                      width: 2,
+                      width: 1, // Reduced from 2 to 1
                     )
                   : null,
               boxShadow: widget.gradient != null && _hover
                   ? const [
                       BoxShadow(
                         color: Color(0x3300FF88),
-                        blurRadius: 22,
-                        offset: Offset(0, 10),
+                        blurRadius: 11, // Reduced from 22 to half
+                        offset: Offset(0, 5), // Reduced from (0, 10) to half
                       ),
                     ]
                   : null,
@@ -229,8 +231,8 @@ class _ButtonBaseState extends State<_ButtonBase> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    letterSpacing: 0.2,
+                    fontSize: 8, // Reduced from 16 to half
+                    letterSpacing: 0.1, // Reduced from 0.2
                     color: widget.textColor ?? Colors.white,
                   ),
                 ),
@@ -354,8 +356,8 @@ class AvatarCircle extends StatelessWidget {
   Widget build(BuildContext context) {
     final initial = name.isNotEmpty ? name.trim()[0].toUpperCase() : '?';
     return Container(
-      width: 38,
-      height: 38,
+      width: 19, // Reduced from 38 to half
+      height: 19, // Reduced from 38 to half
       alignment: Alignment.center,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
@@ -364,8 +366,8 @@ class AvatarCircle extends StatelessWidget {
         ),
       ),
       child: Container(
-        width: 34,
-        height: 34,
+        width: 17, // Reduced from 34 to half
+        height: 17, // Reduced from 34 to half
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.85),
@@ -375,7 +377,7 @@ class AvatarCircle extends StatelessWidget {
           initial,
           style: const TextStyle(
             fontWeight: FontWeight.w800,
-            fontSize: 16,
+            fontSize: 8, // Reduced from 16 to half
             color: Colors.white,
           ),
         ),
@@ -403,7 +405,11 @@ class Stars extends StatelessWidget {
         } else {
           icon = Icons.star_border_rounded;
         }
-        return Icon(icon, size: 18, color: const Color(0xFFFFD166));
+        return Icon(
+          icon,
+          size: 9,
+          color: const Color(0xFFFFD166),
+        ); // Reduced from 18 to half
       }),
     );
   }

@@ -1,13 +1,13 @@
 // orderbooking.dart
 import 'dart:ui'; // for ImageFilter blur
 import 'package:flutter/material.dart';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart' as fb;
 
 import 'fx_shared.dart';
 import 'widgets_shared.dart';
+import 'bike_details_page.dart'; // NEW: details screen
 
 class OrderPage extends StatefulWidget {
   static const route = '/order';
@@ -251,6 +251,18 @@ class _OrderPageState extends State<OrderPage> {
                                 final b = Bike.fromDoc(docs[i]);
                                 return _BikeCard(
                                   bike: b,
+                                  // UPDATED: push full page instead of dialog
+                                  onViewDetails: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => BikeDetailsPage(
+                                          bike: b,
+                                          onBook: (ctx, bike) =>
+                                              _openBookingDialog(ctx, bike),
+                                        ),
+                                      ),
+                                    );
+                                  },
                                   onBook: () => _openBookingDialog(context, b),
                                   onEdit: () =>
                                       _maybeOpenEditDialog(context, b),
@@ -505,6 +517,13 @@ class _OrderPageState extends State<OrderPage> {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final priceCtrl = TextEditingController(text: existing?.price ?? '');
     final imageCtrl = TextEditingController(text: existing?.imageUrl ?? '');
+    // Optional extra images (up to 3)
+    final g = existing?.gallery ?? const <String>[];
+    final image2Ctrl = TextEditingController(text: g.isNotEmpty ? g[0] : '');
+    final image3Ctrl = TextEditingController(text: g.length > 1 ? g[1] : '');
+    final image4Ctrl = TextEditingController(text: g.length > 2 ? g[2] : '');
+    // NEW: details field
+    final detailsCtrl = TextEditingController(text: existing?.details ?? '');
     final isEdit = existing != null;
 
     await showDialog(
@@ -541,15 +560,53 @@ class _OrderPageState extends State<OrderPage> {
                   ),
                   const SizedBox(height: 10),
                   _FxTextField(
+                    controller: detailsCtrl,
+                    label: 'Details',
+                    icon: Icons.description_rounded,
+                    minLines: 3,
+                    maxLines: 6,
+                  ),
+                  const SizedBox(height: 10),
+                  _FxTextField(
                     controller: imageCtrl,
-                    label: 'Image URL (Cloudinary supported)',
+                    label: 'Main Image URL',
                     hint:
-                        'https://res.cloudinary.com/<cloud>/image/upload/f_auto,q_auto/<public_id>.jpg',
+                        'https://res.cloudinary.com/<cloud>/image/upload/.../main.jpg',
                     icon: Icons.link_rounded,
                     onChanged: (_) => setDialogState(() {}),
                   ),
                   const SizedBox(height: 12),
                   _PreviewCard(imageUrl: imageCtrl.text.trim()),
+                  const SizedBox(height: 14),
+                  // Extra images (optional)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'More images (optional)',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _FxTextField(
+                    controller: image2Ctrl,
+                    label: 'Image 2 URL',
+                    icon: Icons.image_rounded,
+                  ),
+                  const SizedBox(height: 8),
+                  _FxTextField(
+                    controller: image3Ctrl,
+                    label: 'Image 3 URL',
+                    icon: Icons.image_rounded,
+                  ),
+                  const SizedBox(height: 8),
+                  _FxTextField(
+                    controller: image4Ctrl,
+                    label: 'Image 4 URL',
+                    icon: Icons.image_rounded,
+                  ),
                 ],
               ),
               actions: [
@@ -575,12 +632,21 @@ class _OrderPageState extends State<OrderPage> {
                       return;
                     }
 
+                    // Gather gallery (filter empties)
+                    final gallery = [
+                      image2Ctrl.text.trim(),
+                      image3Ctrl.text.trim(),
+                      image4Ctrl.text.trim(),
+                    ].where((s) => s.startsWith('http')).toList();
+
                     try {
                       if (isEdit) {
                         await _bikesCol.doc(existing!.id).update({
                           'name': name,
                           'price': price,
                           'imageUrl': url,
+                          'gallery': gallery,
+                          'details': detailsCtrl.text.trim(), // NEW
                           'updatedAt': FieldValue.serverTimestamp(),
                         });
                       } else {
@@ -588,6 +654,8 @@ class _OrderPageState extends State<OrderPage> {
                           'name': name,
                           'price': price,
                           'imageUrl': url,
+                          'gallery': gallery,
+                          'details': detailsCtrl.text.trim(), // NEW
                           'createdAt': FieldValue.serverTimestamp(),
                         });
                       }
@@ -756,6 +824,31 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
+  // ---------- URL validator (Cloudinary-friendly) ----------
+
+  bool _looksLikeUrl(String s) {
+    if (!s.startsWith('https://')) return false;
+
+    final uri = Uri.tryParse(s);
+    if (uri == null || uri.host.isEmpty) return false;
+
+    // Cloudinary
+    if (uri.host.endsWith('res.cloudinary.com')) return true;
+
+    // Common CDNs that often serve images with query params
+    if (uri.host.contains('firebasestorage.googleapis.com')) return true;
+    if (uri.host.contains('images.unsplash.com')) return true;
+    if (uri.host.startsWith('cdn.') || uri.host.contains('.cdn.')) return true;
+
+    // Fallback: allow typical image extensions
+    final p = uri.path.toLowerCase();
+    return p.endsWith('.png') ||
+        p.endsWith('.jpg') ||
+        p.endsWith('.jpeg') ||
+        p.endsWith('.webp') ||
+        p.endsWith('.gif');
+  }
+
   // ---------------- Orders panel (admin) ----------------
 
   Future<void> _openOrdersPanel(BuildContext context) async {
@@ -786,8 +879,9 @@ class _OrderPageState extends State<OrderPage> {
                     color: Colors.white.withOpacity(0.06),
                     border: Border.all(color: Colors.white.withOpacity(0.10)),
                     boxShadow: const [
+                      // bluish glow
                       BoxShadow(
-                        color: Color(0x3300FF88),
+                        color: Color(0x332EA8FF),
                         blurRadius: 32,
                         offset: Offset(0, 18),
                       ),
@@ -981,31 +1075,6 @@ class _OrderPageState extends State<OrderPage> {
       },
     );
   }
-
-  // ---------- URL validator (Cloudinary-friendly) ----------
-
-  bool _looksLikeUrl(String s) {
-    if (!s.startsWith('https://')) return false;
-
-    final uri = Uri.tryParse(s);
-    if (uri == null || uri.host.isEmpty) return false;
-
-    // Cloudinary
-    if (uri.host.endsWith('res.cloudinary.com')) return true;
-
-    // Common CDNs that often serve images with query params
-    if (uri.host.contains('firebasestorage.googleapis.com')) return true;
-    if (uri.host.contains('images.unsplash.com')) return true;
-    if (uri.host.startsWith('cdn.') || uri.host.contains('.cdn.')) return true;
-
-    // Fallback: allow typical image extensions
-    final p = uri.path.toLowerCase();
-    return p.endsWith('.png') ||
-        p.endsWith('.jpg') ||
-        p.endsWith('.jpeg') ||
-        p.endsWith('.webp') ||
-        p.endsWith('.gif');
-  }
 }
 
 // ---------------- Models & UI ----------------
@@ -1015,21 +1084,62 @@ class Bike {
   final String name;
   final String price;
   final String imageUrl;
+  final List<String> gallery; // up to 3 extra images (optional)
+  final String details; // NEW
 
   Bike({
     required this.id,
     required this.name,
     required this.price,
     required this.imageUrl,
+    required this.gallery,
+    required this.details, // NEW
   });
 
   factory Bike.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
     final data = d.data() ?? {};
+    final mainUrl = (data['imageUrl'] ?? '').toString();
+
+    List<String> _urls(dynamic v) {
+      if (v is List) {
+        return v
+            .map((e) => e?.toString() ?? '')
+            .where((s) => s.startsWith('http'))
+            .cast<String>()
+            .toList();
+      }
+      return const [];
+    }
+
+    // Prefer 'gallery' array; also read common alt fields for backward compat.
+    final gallery = <String>{}
+      ..addAll(_urls(data['gallery']))
+      ..addAll(_urls(data['images']))
+      ..addAll(_urls(data['extraImages']));
+
+    for (final k in const ['image2', 'image3', 'image4']) {
+      final v = (data[k] ?? '').toString();
+      if (v.startsWith('http')) gallery.add(v);
+    }
+
+    // Remove duplicates / main image
+    final cleaned = gallery.where((u) => u != mainUrl).toList();
+
+    // Keep at most 3 extras
+    final top3 = cleaned.take(3).toList();
+
+    // NEW: support multiple possible keys for details
+    final details =
+        (data['details'] ?? data['detail'] ?? data['description'] ?? '')
+            .toString();
+
     return Bike(
       id: d.id,
       name: (data['name'] ?? '').toString(),
       price: (data['price'] ?? '').toString(),
-      imageUrl: (data['imageUrl'] ?? '').toString(),
+      imageUrl: mainUrl,
+      gallery: top3,
+      details: details, // NEW
     );
   }
 }
@@ -1123,12 +1233,14 @@ class _EmptyCatalog extends StatelessWidget {
 class _BikeCard extends StatelessWidget {
   const _BikeCard({
     required this.bike,
+    required this.onViewDetails,
     required this.onBook,
     required this.onEdit,
     required this.onDelete,
   });
 
   final Bike bike;
+  final VoidCallback onViewDetails;
   final VoidCallback onBook;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -1142,8 +1254,9 @@ class _BikeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white.withOpacity(0.1)),
         boxShadow: [
+          // bluish glow
           BoxShadow(
-            color: const Color(0xFF00FF88).withOpacity(0.10),
+            color: const Color(0xFF2EA8FF).withOpacity(0.10),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1152,27 +1265,39 @@ class _BikeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // network image (fallback to placeholder)
-          ClipRRect(
+          // Clickable header (image + name + price) -> details page
+          InkWell(
             borderRadius: BorderRadius.circular(12),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: _NetworkImageOrPlaceholder(url: bike.imageUrl),
+            onTap: onViewDetails,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: _NetworkImageOrPlaceholder(url: bike.imageUrl),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  bike.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  bike.price,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white.withOpacity(0.80)),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            bike.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            bike.price,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.white.withOpacity(0.80)),
           ),
           const Spacer(),
           Row(
@@ -1205,7 +1330,8 @@ class _BikeCard extends StatelessWidget {
                   ),
                 ),
               ),
-              _GradientButton(text: 'Book Now', onTap: onBook),
+              // UPDATED: Check Details button (navigates to details page)
+              _GradientButton(text: 'Check Details', onTap: onViewDetails),
             ],
           ),
         ],
@@ -1242,7 +1368,7 @@ class _NetworkImageOrPlaceholder extends StatelessWidget {
   );
 }
 
-/// Gradient CTA matching your main page style
+/// Gradient CTA matching your main page style (BLUISH)
 class _GradientButton extends StatelessWidget {
   const _GradientButton({required this.text, required this.onTap});
   final String text;
@@ -1267,11 +1393,14 @@ class _GradientButton extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: radius,
               gradient: const LinearGradient(
-                colors: [Color(0xFF00FF88), Color(0xFF00D4FF)],
+                colors: [
+                  Color(0xFF3B82F6),
+                  Color(0xFF60A5FA),
+                ], // blue → light blue
               ),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x3300FF88),
+                  color: Color(0x332EA8FF), // soft blue glow
                   blurRadius: 22,
                   offset: Offset(0, 10),
                 ),
@@ -1340,7 +1469,7 @@ class _GlassDialog extends StatelessWidget {
                       border: Border.all(color: Colors.white.withOpacity(0.10)),
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x3300FF88),
+                          color: Color(0x332EA8FF), // bluish glass glow
                           blurRadius: 30,
                           offset: Offset(0, 18),
                         ),
@@ -1425,7 +1554,10 @@ class _FxTextField extends StatelessWidget {
     );
     final focused = OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: Color(0xFF00D4FF), width: 1.5),
+      borderSide: const BorderSide(
+        color: Color(0xFF60A5FA),
+        width: 1.5,
+      ), // blue focus
     );
 
     return TextFormField(
@@ -1621,8 +1753,9 @@ class _PrimaryButton extends StatelessWidget {
           ),
       child: Ink(
         decoration: BoxDecoration(
+          // BLUISH gradient for primary actions
           gradient: const LinearGradient(
-            colors: [Color(0xFF00FF88), Color(0xFF00D4FF)],
+            colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
           ),
           borderRadius: BorderRadius.circular(12),
         ),
