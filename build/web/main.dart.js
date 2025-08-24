@@ -91643,7 +91643,7 @@ A.bw(l,$.cw(),!0)
 m=A.n6(new A.bX(l))
 n.push(A.Rl(new A.au8(j),m.F1(m.gnN().i5()),t.op))}else n.push(A.j1(i,i,i,B.I0,i,i,new A.au9(a),i,i,i,"Admin disabled (Firebase not initialized in main.dart)"))
 n.push(B.cD)
-q=A.aBx(j.e,A.c([A.aCT(n,B.p,0,q,p,!0,i,B.p,B.v5,i,72),B.Sd,new A.fe(new A.bM(B.nZ,A.e0(new A.cM(B.fB,A.q7(new A.aua(j)),i),i,i),i),i),B.Sg,new A.fe(new A.bM(B.nZ,A.e0(A.b9("\xa9 2025 EVVE Bikes. All rights reserved.",i,i,i,i,A.di(i,i,A.X(166,B.e.n()>>>16&255,B.e.n()>>>8&255,B.e.n()&255),i,i,i,i,i,i,i,i,i,i,i,i,i,i,!0,i,i,i,i,i,i,i,i),i,i),i,i),i),i)],o))
+q=A.aBx(j.e,A.c([A.aCT(n,B.p,0,q,p,!0,i,B.p,B.v5,i,72),B.Sd,new A.fe(new A.bM(B.nZ,A.e0(new A.cM(B.fB,A.q7(new A.aua(j)),i),i,i),i),i),B.Sg,new A.fe(new A.bM(B.nZ,A.e0(A.b9("\xa9 2025 EVEE Bikes. All rights reserved.",i,i,i,i,A.di(i,i,A.X(166,B.e.n()>>>16&255,B.e.n()>>>8&255,B.e.n()&255),i,i,i,i,i,i,i,i,i,i,i,i,i,i,!0,i,i,i,i,i,i,i,i),i,i),i,i),i),i)],o))
 if(!j.gka())p=B.aj
 else{p=$.bb
 l=(p==null?$.bb=$.cI():p).cW(h)
@@ -92261,7 +92261,7 @@ G(a){var s=null,r=A.aBL(s,s,B.p,s,s,s,s,s,s,s,s,s,B.jF,B.p,new A.cz(A.bP(12),B.m
 return A.aBK(A.AM(A.bQ(s,B.XX,B.n,s,s,s,s,s,s,B.nV,s,s,s),new A.by(s,s,s,q,s,B.IM,B.O)),this.d,r)}}
 A.NX.prototype={
 G(a){var s=null
-return A.vT(A.b9("EVVE",s,s,s,s,A.JO().$3$color$fontSize$fontWeight(B.e,13,B.bG),s,s),new A.aba())}}
+return A.vT(A.b9("EVEE",s,s,s,s,A.JO().$3$color$fontSize$fontWeight(B.e,13,B.bG),s,s),new A.aba())}}
 A.aba.prototype={
 $1(a){return B.cz.iW(a)},
 $S:46}
@@ -96814,7 +96814,7 @@ B.Hl=new A.bt(62922,"MaterialIcons",!1)
 B.a_6=new A.jB(B.Hl,"Lightning Fast","Reach speeds up to 45 km/h with our advanced motor technology and intelligent power management system.",null)
 B.a_8=new A.jB(B.oF,"Long Range","Go up to 100km on a single charge with our high-capacity lithium batteries and energy-efficient design.",null)
 B.Hr=new A.bt(63218,"MaterialIcons",!1)
-B.a_b=new A.jB(B.Hr,"Eco-Friendly","Zero emissions, sustainable materials, and recyclable components. Ride clean, ride green with EVVE.",null)
+B.a_b=new A.jB(B.Hr,"Eco-Friendly","Zero emissions, sustainable materials, and recyclable components. Ride clean, ride green with EVEE.",null)
 B.HF=new A.bt(983451,"MaterialIcons",!1)
 B.a_7=new A.jB(B.HF,"Smart Connected","Integrated GPS tracking, smartphone app connectivity, and intelligent theft protection for peace of mind.",null)
 B.Hm=new A.bt(62963,"MaterialIcons",!1)
@@ -98037,7 +98037,7 @@ B.zo=new A.vK(3,"bottom")
 B.Qh=new A.Dr(null,null,null,null,null,null,null,null,null,null,null)
 B.Qi=new A.Ds(null,null,null,null,null,null,null,null,null,null,null,null)
 B.Qj=new A.Dt(null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.Qk=new A.vM("Why Choose EVVE?",null)
+B.Qk=new A.vM("Why Choose EVEE?",null)
 B.Qm=new A.vM("What Riders Say",null)
 B.Qn=new A.Dv(null,null)
 B.aD=new A.iu(0,"tap")
@@ -98665,7 +98665,7 @@ B.XG=new A.cu("Orders",null,B.iu,null,null,null,null,null,null,null)
 B.XI=new A.cu("No bikes yet",null,B.lP,null,null,null,null,null,null,null)
 B.XM=new A.cu("Firebase is not initialized. Admin login and dynamic catalog are disabled. Initialize Firebase in main.dart to enable.",null,null,B.bx,null,null,null,null,null,null)
 B.XP=new A.cu("Admin can add bikes using the button below.",null,B.it,null,null,null,null,null,null,null)
-B.XQ=new A.cu("\xa9 2025 EVVE Bikes. All rights reserved. | Ride the Future, Today.",null,B.it,null,null,null,null,null,null,null)
+B.XQ=new A.cu("\xa9 2025 EVEE Bikes. All rights reserved. | Ride the Future, Today.",null,B.it,null,null,null,null,null,null,null)
 B.XU=new A.cu("Admin sign in to add",null,null,null,null,null,null,null,null,null)
 B.XX=new A.cu("Delete",null,B.AG,null,null,null,null,null,null,null)
 B.VC=new A.m(!0,null,null,null,null,null,18,B.bG,null,0.8,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)

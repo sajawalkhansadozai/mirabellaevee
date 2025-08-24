@@ -17,7 +17,7 @@ class Logo extends StatelessWidget {
         colors: [Color(0xFF00FF88), Color(0xFF00D4FF)],
       ).createShader(rect),
       child: Text(
-        'EVVE',
+        'EVEE',
         style: GoogleFonts.orbitron(
           fontSize: 13,
           fontWeight: FontWeight.w900,

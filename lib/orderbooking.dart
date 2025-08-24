@@ -290,7 +290,7 @@ class _OrderPageState extends State<OrderPage> {
                 ),
                 child: Center(
                   child: Text(
-                    '© 2025 EVVE Bikes. All rights reserved.',
+                    '© 2025 EVEE Bikes. All rights reserved.',
                     style: TextStyle(color: Colors.white.withOpacity(0.65)),
                   ),
                 ),

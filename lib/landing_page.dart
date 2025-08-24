@@ -615,7 +615,7 @@ class _FeaturesSection extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40),
       child: Column(
         children: [
-          const SectionTitle('Why Choose EVVE?'),
+          const SectionTitle('Why Choose EVEE?'),
           const SizedBox(height: 28),
           LayoutBuilder(
             builder: (context, c) {
@@ -641,7 +641,7 @@ class _FeaturesSection extends StatelessWidget {
                   icon: Icons.eco_rounded,
                   title: 'Eco-Friendly',
                   desc:
-                      'Zero emissions, sustainable materials, and recyclable components. Ride clean, ride green with EVVE.',
+                      'Zero emissions, sustainable materials, and recyclable components. Ride clean, ride green with EVEE.',
                 ),
                 _Feature(
                   icon: Icons.smartphone_rounded,
@@ -932,7 +932,7 @@ class _Footer extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: const Text(
-        '© 2025 EVVE Bikes. All rights reserved. | Ride the Future, Today.',
+        '© 2025 EVEE Bikes. All rights reserved. | Ride the Future, Today.',
         style: TextStyle(color: Colors.white70),
       ),
     );
