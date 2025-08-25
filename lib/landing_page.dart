@@ -629,13 +629,13 @@ class _FeaturesSection extends StatelessWidget {
                   icon: Icons.bolt_rounded,
                   title: 'Lightning Fast',
                   desc:
-                      'Reach speeds up to 45 km/h with our advanced motor technology and intelligent power management system.',
+                      'Reach speeds up to 45 to 65km/h with our advanced motor technology and intelligent power management system.',
                 ),
                 _Feature(
                   icon: Icons.battery_charging_full_rounded,
                   title: 'Long Range',
                   desc:
-                      'Go up to 100km on a single charge with our high-capacity lithium batteries and energy-efficient design.',
+                      '7 hours fast charging. Go up to 70km to 100km on a single charge with our high-capacity lithium batteries and energy-efficient design.',
                 ),
                 _Feature(
                   icon: Icons.eco_rounded,

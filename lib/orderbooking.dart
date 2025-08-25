@@ -340,8 +340,8 @@ class _OrderPageState extends State<OrderPage> {
     return MouseFX(
       controller: _fx,
       child: Scaffold(
-        resizeToAvoidBottomInset:
-            true, // ✅ keeps content visible when the keyboard opens
+        // ⛔️ Do NOT resize page when keyboard appears
+        resizeToAvoidBottomInset: false,
         body: tracked,
       ),
     );
@@ -681,15 +681,10 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  // ---------------- Booking dialog (saves to Firestore: orders) ----------------
-
+  // ---------------- Booking dialog (message-only; no Firestore write) ----------------
   Future<void> _openBookingDialog(BuildContext context, Bike bike) async {
-    if (!_firebaseReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Booking disabled (no Firebase).')),
-      );
-      return;
-    }
+    // ✅ Booking dialog now always opens (even if Firebase isn't initialized).
+    //    "Done" shows a centered circular confirmation UI (no saving).
 
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController();
@@ -779,50 +774,40 @@ class _OrderPageState extends State<OrderPage> {
                 ),
                 _PrimaryButton(
                   text: 'Done',
-                  onTap: () async {
+                  onTap: () {
+                    // Keep validation (optional). Remove next 2 lines to bypass.
                     if (!formKey.currentState!.validate()) return;
 
-                    try {
-                      await _ordersCol.add({
-                        // user info
-                        'name': nameCtrl.text.trim(),
-                        'email': emailCtrl.text.trim(),
-                        'phone': phoneCtrl.text.trim(),
-                        'address': addressCtrl.text.trim(),
-                        'quantity': qty,
-
-                        // bike snapshot
-                        'bikeId': bike.id,
-                        'bikeName': bike.name,
-                        'bikePrice': bike.price,
-                        'bikeImageUrl': bike.imageUrl,
-
-                        'status': 'new',
-                        'createdAt': FieldValue.serverTimestamp(),
-                      });
-
-                      if (context.mounted) {
-                        Navigator.pop(context); // close dialog
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Order placed! Our team will contact you soon.',
-                            ),
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to place order: $e')),
-                        );
-                      }
-                    }
+                    // Close the form dialog, then show centered circular success
+                    Navigator.pop(context);
+                    _showBookingReceivedDialog(context);
                   },
                 ),
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  // ---------------- Centered circular confirmation popup ----------------
+  void _showBookingReceivedDialog(BuildContext context) {
+    showGeneralDialog(
+      context: context,
+      barrierLabel: 'Booking received',
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.55),
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (_, __, ___) => const SizedBox.shrink(),
+      transitionBuilder: (context, anim, __, ___) {
+        final scale = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        final fade = CurvedAnimation(parent: anim, curve: Curves.easeOut);
+        return FadeTransition(
+          opacity: fade,
+          child: Center(
+            child: ScaleTransition(scale: scale, child: const _CircleSuccess()),
+          ),
         );
       },
     );
@@ -1453,13 +1438,9 @@ class _GlassDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.all(12),
       backgroundColor: Colors.transparent,
       child: SafeArea(
-        child: AnimatedPadding(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: EdgeInsets.only(
-            // keeps the whole dialog above the keyboard
-            bottom: MediaQuery.of(context).viewInsets.bottom + 8,
-          ),
+        // ⛔️ Keep dialog fixed; do NOT shift with keyboard
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
@@ -1495,7 +1476,7 @@ class _GlassDialog extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
 
-                        // ✅ Keyboard-aware, scrollable content
+                        // ✅ Keyboard-aware, scrollable content (dialog stays put)
                         Flexible(
                           child: LayoutBuilder(
                             builder: (context, constraints) {
@@ -1503,6 +1484,8 @@ class _GlassDialog extends StatelessWidget {
                                 context,
                               ).viewInsets.bottom;
                               return SingleChildScrollView(
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
                                 physics: const BouncingScrollPhysics(),
                                 padding: EdgeInsets.only(
                                   bottom: bottomInset + 16,
@@ -1592,7 +1575,7 @@ class _FxTextField extends StatelessWidget {
       maxLines: maxLines,
       validator: validator,
       onChanged: onChanged,
-      // ✅ better keyboard flow: next for single-line, newline for multi-line
+      // better keyboard flow: next for single-line, newline for multi-line
       textInputAction: maxLines == 1
           ? TextInputAction.next
           : TextInputAction.newline,
@@ -1833,6 +1816,109 @@ class _DangerButton extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===================
+// Center circular UI
+// ===================
+class _CircleSuccess extends StatelessWidget {
+  const _CircleSuccess();
+
+  @override
+  Widget build(BuildContext context) {
+    const double outerSize = 240;
+    const double innerSize = 208;
+
+    return Material(
+      color: Colors.transparent,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).pop(), // tap to dismiss
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Outer gradient ring + glow
+            Container(
+              width: outerSize,
+              height: outerSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)], // blue ring
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x4D2EA8FF), // soft blue glow
+                    blurRadius: 50,
+                    spreadRadius: 4,
+                  ),
+                ],
+              ),
+            ),
+
+            // Inner dark glassy circle
+            Container(
+              width: innerSize,
+              height: innerSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF0F0F23).withOpacity(0.85),
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x332EA8FF), blurRadius: 28),
+                ],
+              ),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(
+                        Icons.check_circle_rounded,
+                        size: 66,
+                        color: Color(0xFF34D399), // emerald green check
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'Booking Received!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        "We'll get back to you soon.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          height: 1.2,
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'Tap to close',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 11,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
