@@ -7,7 +7,7 @@ import 'package:firebase_core/firebase_core.dart' as fb;
 
 import 'fx_shared.dart';
 import 'widgets_shared.dart';
-import 'bike_details_page.dart'; // NEW: details screen
+import 'bike_details_page.dart'; // details screen
 
 class OrderPage extends StatefulWidget {
   static const route = '/order';
@@ -251,7 +251,7 @@ class _OrderPageState extends State<OrderPage> {
                                 final b = Bike.fromDoc(docs[i]);
                                 return _BikeCard(
                                   bike: b,
-                                  // UPDATED: push full page instead of dialog
+                                  // push full page instead of dialog
                                   onViewDetails: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
@@ -339,7 +339,11 @@ class _OrderPageState extends State<OrderPage> {
 
     return MouseFX(
       controller: _fx,
-      child: Scaffold(body: tracked),
+      child: Scaffold(
+        resizeToAvoidBottomInset:
+            true, // ✅ keyboard ke aate hi body/dialg adjust
+        body: tracked,
+      ),
     );
   }
 
@@ -381,6 +385,7 @@ class _OrderPageState extends State<OrderPage> {
                 hint: 'admin@yourdomain.com',
                 icon: Icons.alternate_email_rounded,
                 keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next, // ✅
               ),
               const SizedBox(height: 10),
               _FxTextField(
@@ -388,6 +393,7 @@ class _OrderPageState extends State<OrderPage> {
                 label: 'Password',
                 icon: Icons.password_rounded,
                 obscureText: true,
+                textInputAction: TextInputAction.done, // ✅
               ),
               const SizedBox(height: 6),
               Row(
@@ -522,7 +528,7 @@ class _OrderPageState extends State<OrderPage> {
     final image2Ctrl = TextEditingController(text: g.isNotEmpty ? g[0] : '');
     final image3Ctrl = TextEditingController(text: g.length > 1 ? g[1] : '');
     final image4Ctrl = TextEditingController(text: g.length > 2 ? g[2] : '');
-    // NEW: details field
+    // details field
     final detailsCtrl = TextEditingController(text: existing?.details ?? '');
     final isEdit = existing != null;
 
@@ -550,6 +556,7 @@ class _OrderPageState extends State<OrderPage> {
                     controller: nameCtrl,
                     label: 'Name',
                     icon: Icons.directions_bike_rounded,
+                    textInputAction: TextInputAction.next, // ✅
                   ),
                   const SizedBox(height: 10),
                   _FxTextField(
@@ -557,6 +564,7 @@ class _OrderPageState extends State<OrderPage> {
                     label: 'Price (e.g., PKR 249,000)',
                     icon: Icons.sell_rounded,
                     keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next, // ✅
                   ),
                   const SizedBox(height: 10),
                   _FxTextField(
@@ -565,6 +573,7 @@ class _OrderPageState extends State<OrderPage> {
                     icon: Icons.description_rounded,
                     minLines: 3,
                     maxLines: 6,
+                    // Multiline — leave default action
                   ),
                   const SizedBox(height: 10),
                   _FxTextField(
@@ -574,6 +583,7 @@ class _OrderPageState extends State<OrderPage> {
                         'https://res.cloudinary.com/<cloud>/image/upload/.../main.jpg',
                     icon: Icons.link_rounded,
                     onChanged: (_) => setDialogState(() {}),
+                    textInputAction: TextInputAction.next, // ✅
                   ),
                   const SizedBox(height: 12),
                   _PreviewCard(imageUrl: imageCtrl.text.trim()),
@@ -594,18 +604,21 @@ class _OrderPageState extends State<OrderPage> {
                     controller: image2Ctrl,
                     label: 'Image 2 URL',
                     icon: Icons.image_rounded,
+                    textInputAction: TextInputAction.next, // ✅
                   ),
                   const SizedBox(height: 8),
                   _FxTextField(
                     controller: image3Ctrl,
                     label: 'Image 3 URL',
                     icon: Icons.image_rounded,
+                    textInputAction: TextInputAction.next, // ✅
                   ),
                   const SizedBox(height: 8),
                   _FxTextField(
                     controller: image4Ctrl,
                     label: 'Image 4 URL',
                     icon: Icons.image_rounded,
+                    textInputAction: TextInputAction.done, // ✅
                   ),
                 ],
               ),
@@ -646,7 +659,7 @@ class _OrderPageState extends State<OrderPage> {
                           'price': price,
                           'imageUrl': url,
                           'gallery': gallery,
-                          'details': detailsCtrl.text.trim(), // NEW
+                          'details': detailsCtrl.text.trim(),
                           'updatedAt': FieldValue.serverTimestamp(),
                         });
                       } else {
@@ -655,7 +668,7 @@ class _OrderPageState extends State<OrderPage> {
                           'price': price,
                           'imageUrl': url,
                           'gallery': gallery,
-                          'details': detailsCtrl.text.trim(), // NEW
+                          'details': detailsCtrl.text.trim(),
                           'createdAt': FieldValue.serverTimestamp(),
                         });
                       }
@@ -721,6 +734,7 @@ class _OrderPageState extends State<OrderPage> {
                         controller: nameCtrl,
                         label: 'Full name',
                         icon: Icons.person_rounded,
+                        textInputAction: TextInputAction.next, // ✅
                         validator: (v) =>
                             (v == null || v.trim().isEmpty) ? 'Required' : null,
                       ),
@@ -730,6 +744,7 @@ class _OrderPageState extends State<OrderPage> {
                         label: 'Email address',
                         icon: Icons.alternate_email_rounded,
                         keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next, // ✅
                         validator: (v) {
                           final s = v?.trim() ?? '';
                           if (s.isEmpty) return 'Required';
@@ -745,6 +760,7 @@ class _OrderPageState extends State<OrderPage> {
                         label: 'Phone number',
                         icon: Icons.phone_rounded,
                         keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next, // ✅
                         validator: (v) =>
                             (v == null || v.trim().isEmpty) ? 'Required' : null,
                       ),
@@ -755,6 +771,7 @@ class _OrderPageState extends State<OrderPage> {
                         icon: Icons.home_rounded,
                         minLines: 2,
                         maxLines: 3,
+                        textInputAction: TextInputAction.done, // ✅
                         validator: (v) =>
                             (v == null || v.trim().isEmpty) ? 'Required' : null,
                       ),
@@ -1085,7 +1102,7 @@ class Bike {
   final String price;
   final String imageUrl;
   final List<String> gallery; // up to 3 extra images (optional)
-  final String details; // NEW
+  final String details;
 
   Bike({
     required this.id,
@@ -1093,7 +1110,7 @@ class Bike {
     required this.price,
     required this.imageUrl,
     required this.gallery,
-    required this.details, // NEW
+    required this.details,
   });
 
   factory Bike.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
@@ -1128,7 +1145,7 @@ class Bike {
     // Keep at most 3 extras
     final top3 = cleaned.take(3).toList();
 
-    // NEW: support multiple possible keys for details
+    // support multiple possible keys for details
     final details =
         (data['details'] ?? data['detail'] ?? data['description'] ?? '')
             .toString();
@@ -1139,7 +1156,7 @@ class Bike {
       price: (data['price'] ?? '').toString(),
       imageUrl: mainUrl,
       gallery: top3,
-      details: details, // NEW
+      details: details,
     );
   }
 }
@@ -1330,7 +1347,6 @@ class _BikeCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // UPDATED: Check Details button (navigates to details page)
               _GradientButton(text: 'Check Details', onTap: onViewDetails),
             ],
           ),
@@ -1442,20 +1458,22 @@ class _GlassDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final maxW = size.width < 600 ? size.width - 24 : 560.0;
-    final maxH = size.height * 0.88;
+    final viewInsets = MediaQuery.of(context).viewInsets; // keyboard height
+    final maxW = size.width < 600 ? size.width - 16 : 560.0;
+    final maxH = size.height * 0.94; // more headroom
 
     return Dialog(
-      insetPadding: const EdgeInsets.all(12),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       backgroundColor: Colors.transparent,
       child: SafeArea(
         child: AnimatedPadding(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 8,
+            bottom: viewInsets.bottom + 8, // ✅ lift above keyboard
           ),
-          child: Center(
+          child: Align(
+            alignment: Alignment.bottomCenter, // ✅ bottom-sheet feel
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
               child: ClipRRect(
@@ -1489,10 +1507,12 @@ class _GlassDialog extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        // Make body scroll if needed (prevents overflow)
+                        // Always-scrollable body + drag to dismiss keyboard
                         Flexible(
                           child: SingleChildScrollView(
                             physics: const BouncingScrollPhysics(),
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
                             child: content,
                           ),
                         ),
@@ -1533,6 +1553,7 @@ class _FxTextField extends StatelessWidget {
     this.maxLines = 1,
     this.onChanged,
     this.validator,
+    this.textInputAction, // ✅ NEW
   });
 
   final TextEditingController controller;
@@ -1545,6 +1566,7 @@ class _FxTextField extends StatelessWidget {
   final int maxLines;
   final void Function(String)? onChanged;
   final String? Function(String?)? validator;
+  final TextInputAction? textInputAction; // ✅
 
   @override
   Widget build(BuildContext context) {
@@ -1568,6 +1590,14 @@ class _FxTextField extends StatelessWidget {
       maxLines: maxLines,
       validator: validator,
       onChanged: onChanged,
+      textInputAction: textInputAction,
+      onFieldSubmitted: (_) {
+        if (textInputAction == TextInputAction.next) {
+          FocusScope.of(context).nextFocus(); // ✅ move to next
+        } else if (textInputAction == TextInputAction.done) {
+          FocusScope.of(context).unfocus(); // ✅ close keyboard
+        }
+      },
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
