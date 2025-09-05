@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element_parameter
+
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -167,11 +169,22 @@ class _LandingPageState extends State<LandingPage>
                         ),
                         const SizedBox(width: 24),
                       ],
-                      // CTA now goes to Order page
-                      PrimaryCta(
-                        text: 'Get Started',
-                        onTap: () =>
-                            Navigator.pushNamed(context, OrderPage.route),
+                      // CTA now goes to Order page — bigger button + 2x text
+                      SizedBox(
+                        width: isNarrow ? 180 : 220,
+                        height: isNarrow ? 52 : 60,
+                        child: MagneticHover(
+                          child: MediaQuery(
+                            data: MediaQuery.of(
+                              context,
+                            ).copyWith(textScaleFactor: 2.0),
+                            child: PrimaryCta(
+                              text: 'Get Started',
+                              onTap: () =>
+                                  Navigator.pushNamed(context, OrderPage.route),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   );
@@ -197,7 +210,7 @@ class _LandingPageState extends State<LandingPage>
             SliverToBoxAdapter(child: _ReviewsSection(key: _reviewsKey)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
 
-            // Contact buttons now go to Order page
+            // Contact buttons now go to Order page (only "Order Now")
             SliverToBoxAdapter(child: _ContactSection(key: _contactKey)),
             const SliverToBoxAdapter(child: SizedBox(height: 60)),
             const SliverToBoxAdapter(child: _Footer()),
@@ -403,6 +416,11 @@ class _HeroSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
+    final narrow = w < 640;
+    const btnH = 64.0; // taller for 2x text
+    final containerMax = min(1000.0, w - 48); // 24px padding each side
+    final btnW = narrow ? containerMax : 260.0;
+
     return Container(
       height: max(540, MediaQuery.of(context).size.height * 0.92),
       alignment: Alignment.center,
@@ -450,16 +468,34 @@ class _HeroSection extends StatelessWidget {
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        MagneticHover(
-                          child: PrimaryCta(
-                            text: 'Explore Bikes',
-                            onTap: onExplore,
+                        SizedBox(
+                          width: btnW,
+                          height: btnH,
+                          child: MagneticHover(
+                            child: MediaQuery(
+                              data: MediaQuery.of(
+                                context,
+                              ).copyWith(textScaleFactor: 2.0),
+                              child: PrimaryCta(
+                                text: 'Explore Bikes',
+                                onTap: onExplore,
+                              ),
+                            ),
                           ),
                         ),
-                        MagneticHover(
-                          child: SecondaryCta(
-                            text: 'Learn More',
-                            onTap: onExplore,
+                        SizedBox(
+                          width: btnW,
+                          height: btnH,
+                          child: MagneticHover(
+                            child: MediaQuery(
+                              data: MediaQuery.of(
+                                context,
+                              ).copyWith(textScaleFactor: 2.0),
+                              child: SecondaryCta(
+                                text: 'Learn More',
+                                onTap: onExplore,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -868,6 +904,7 @@ class _ContactSection extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 650),
           child: Column(
             children: [
+              // Heading
               ShaderMask(
                 shaderCallback: (rect) => const LinearGradient(
                   colors: [Color(0xFF00FF88), Color(0xFF00D4FF)],
@@ -881,6 +918,7 @@ class _ContactSection extends StatelessWidget {
                   ),
                 ),
               ),
+
               const SizedBox(height: 12),
               Text(
                 'Join thousands of riders who have already made the switch to sustainable, intelligent transportation.',
@@ -890,32 +928,111 @@ class _ContactSection extends StatelessWidget {
                   fontSize: 16,
                 ),
               ),
+
+              // Contact info card
               const SizedBox(height: 20),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  MagneticHover(
-                    child: PrimaryCta(
-                      text: 'Order Now',
-                      onTap: () =>
-                          Navigator.pushNamed(context, OrderPage.route),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withOpacity(0.10)),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _InfoRow(
+                      icon: Icons.phone_rounded,
+                      label: 'Phone',
+                      value: '03005315500  •  03350928668',
                     ),
-                  ),
-                  MagneticHover(
-                    child: SecondaryCta(
-                      text: 'Book Test Ride',
-                      onTap: () =>
-                          Navigator.pushNamed(context, OrderPage.route),
+                    SizedBox(height: 10),
+                    _InfoRow(
+                      icon: Icons.alternate_email_rounded,
+                      label: 'Email',
+                      value: 'bookings@mirabellaevee.com',
                     ),
-                  ),
-                ],
+                    SizedBox(height: 10),
+                    _InfoRow(
+                      icon: Icons.location_on_rounded,
+                      label: 'Address',
+                      value: 'E-18 Gulshan sehat Mirabella Complex B Block',
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Single CTA: Order Now — bigger button + 2x text
+              LayoutBuilder(
+                builder: (ctx, cons) {
+                  final isNarrow = MediaQuery.of(ctx).size.width < 600;
+                  final btnW = isNarrow ? cons.maxWidth : 260.0;
+                  return SizedBox(
+                    width: btnW,
+                    height: 64.0,
+                    child: MagneticHover(
+                      child: MediaQuery(
+                        data: MediaQuery.of(ctx).copyWith(textScaleFactor: 2.0),
+                        child: PrimaryCta(
+                          text: 'Order Now',
+                          onTap: () =>
+                              Navigator.pushNamed(ctx, OrderPage.route),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+// Small helper row for contact lines (selectable text)
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Colors.white.withOpacity(0.9)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white.withOpacity(0.95),
+                ),
+              ),
+              const SizedBox(height: 2),
+              SelectableText(
+                value,
+                style: TextStyle(color: Colors.white.withOpacity(0.85)),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

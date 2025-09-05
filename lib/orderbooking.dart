@@ -1,13 +1,508 @@
 // orderbooking.dart
+// ignore_for_file: unused_element, unused_element_parameter
+
+import 'dart:typed_data';
 import 'dart:ui'; // for ImageFilter blur
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart' as fb;
-
+// NOTE: storage upload removed (text-only storage now)
+// import 'package:firebase_storage/firebase_storage.dart' as fbs;
+import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'fx_shared.dart';
 import 'widgets_shared.dart';
-import 'bike_details_page.dart'; // NEW: details screen
+import 'bike_details_page.dart'; // details screen
+
+// Use central Bike model and re-export for backward compatibility
+import 'models/bike.dart';
+export 'models/bike.dart' show Bike;
+
+/// ===============================
+/// Reusable PDF builders (bytes)
+/// (used for printing only; not stored)
+/// ===============================
+
+Future<Uint8List> buildInvoicePdfBytes({
+  required Map<String, dynamic> orderData,
+  required String invoiceNumber,
+  required String date,
+  required String chassis,
+  required String engine,
+  required String color,
+}) async {
+  final pdf = pw.Document();
+  final black = PdfColor.fromInt(0xFF000000);
+
+  // Load logos (2× size)
+  final mirabellaLogo = pw.MemoryImage(
+    (await rootBundle.load('assets/logo/mirabella.png')).buffer.asUint8List(),
+  );
+  final eveeLogo = pw.MemoryImage(
+    (await rootBundle.load('assets/logo/evee.png')).buffer.asUint8List(),
+  );
+
+  // Keep only digits for Amount
+  String _digitsOnly(dynamic v) =>
+      (v ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
+
+  pw.TableRow row(String a, String b) => pw.TableRow(
+    children: [
+      pw.Padding(
+        padding: const pw.EdgeInsets.all(8),
+        child: pw.Text(a, style: const pw.TextStyle(fontSize: 10)),
+      ),
+      pw.Padding(
+        padding: const pw.EdgeInsets.all(8),
+        child: pw.Text(b, style: const pw.TextStyle(fontSize: 10)),
+      ),
+    ],
+  );
+
+  pdf.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.fromLTRB(24, 36, 24, 24),
+      build: (ctx) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          // Logos + centered title block
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(
+                width: 168,
+                height: 84,
+                child: pw.Image(mirabellaLogo, fit: pw.BoxFit.contain),
+              ),
+              pw.Column(
+                mainAxisSize: pw.MainAxisSize.min,
+                children: [
+                  pw.Text(
+                    'EVEE MIRABELLA',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    'Mirabella Complex, E-18 Gulshan-e-Sehat, Islamabad',
+                    textAlign: pw.TextAlign.center,
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                  pw.Text(
+                    'Contact: 03350928668',
+                    textAlign: pw.TextAlign.center,
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                  pw.SizedBox(height: 10),
+                  pw.Text(
+                    'INVOICE',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: 14,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(
+                width: 168,
+                height: 84,
+                child: pw.Image(eveeLogo, fit: pw.BoxFit.contain),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+
+          // Centered meta
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Text(
+                'Invoice #: $invoiceNumber',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Customer Name: ${orderData['name']}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Father Name: ${orderData['fatherName'] ?? '-'}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'CNIC #: ${orderData['cnic'] ?? '-'}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Address: ${orderData['address']}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.SizedBox(height: 6),
+              pw.Text('Date: $date', textAlign: pw.TextAlign.center),
+              pw.Text(
+                'Cell: ${orderData['phone']}',
+                textAlign: pw.TextAlign.center,
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+
+          // Centered compact table (50/50 columns)
+          pw.Center(
+            child: pw.ConstrainedBox(
+              constraints: const pw.BoxConstraints.tightFor(width: 460),
+              child: pw.Table(
+                border: pw.TableBorder.all(color: black, width: 0.8),
+                columnWidths: const {
+                  0: pw.FlexColumnWidth(1),
+                  1: pw.FlexColumnWidth(1),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.black),
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'DESCRIPTION',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.white,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'DETAIL',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.white,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  row('Model', (orderData['bikeName'] ?? '').toString()),
+                  row('Year', '2025'),
+                  row('Chassis #', chassis),
+                  row('Engine #', engine),
+                  row('Color', color),
+                  // Amount: digits only (no Rs, commas, spaces)
+                  row('Amount Rs.', _digitsOnly(orderData['bikePrice'])),
+                  // Keep payment mode
+                  row('Payment Mode (Cash/Credit card/Online)', 'Cash'),
+                ],
+              ),
+            ),
+          ),
+
+          // Half-width signature lines (centered layout)
+          pw.SizedBox(height: 24),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
+            children: [
+              pw.Column(
+                children: [
+                  pw.SizedBox(height: 24),
+                  pw.Container(width: 140, height: 1, color: black),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Customer Signature',
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+              pw.Column(
+                children: [
+                  pw.SizedBox(height: 24),
+                  pw.Container(width: 140, height: 1, color: black),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Dealer Signature',
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 10),
+
+          // Terms (centered)
+          pw.Text(
+            'Terms & Conditions',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Text(
+            '1. Dealership will not be re-buying any product',
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+          pw.Text(
+            '2. For after sales services call Evee Customer Support on +92 3280408254 and Helpline +92 304111257',
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  return pdf.save();
+}
+
+Future<Uint8List> buildChalanPdfBytes({
+  required Map<String, dynamic> orderData,
+  required String chalanNumber,
+  required String date,
+  required String chassis,
+  required String engine,
+  required String color,
+}) async {
+  final pdf = pw.Document();
+  final black = PdfColor.fromInt(0xFF000000);
+
+  // 2× logos
+  final mirabellaLogo = pw.MemoryImage(
+    (await rootBundle.load('assets/logo/mirabella.png')).buffer.asUint8List(),
+  );
+  final eveeLogo = pw.MemoryImage(
+    (await rootBundle.load('assets/logo/evee.png')).buffer.asUint8List(),
+  );
+
+  pw.TableRow row(String a, String b) => pw.TableRow(
+    children: [
+      pw.Padding(
+        padding: const pw.EdgeInsets.all(6),
+        child: pw.Text(a, style: const pw.TextStyle(fontSize: 10)),
+      ),
+      pw.Padding(
+        padding: const pw.EdgeInsets.all(6),
+        child: pw.Text(b, style: const pw.TextStyle(fontSize: 10)),
+      ),
+    ],
+  );
+
+  pdf.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.fromLTRB(24, 36, 24, 24),
+      build: (ctx) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          // Logos + centered title block
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(
+                width: 168,
+                height: 84,
+                child: pw.Image(mirabellaLogo, fit: pw.BoxFit.contain),
+              ),
+              pw.Column(
+                mainAxisSize: pw.MainAxisSize.min,
+                children: [
+                  pw.Text(
+                    'EVEE MIRABELLA',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    'Mirabella Complex, E-18 Gulshan-e-Sehat, Islamabad',
+                    textAlign: pw.TextAlign.center,
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                  pw.Text(
+                    'Contact: 03350928668',
+                    textAlign: pw.TextAlign.center,
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                  pw.SizedBox(height: 10),
+                  pw.Text(
+                    'DELIVERY CHALAN',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: 14,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(
+                width: 168,
+                height: 84,
+                child: pw.Image(eveeLogo, fit: pw.BoxFit.contain),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+
+          // Centered meta (CHALAN only)
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Text(
+                'CHALAN #: $chalanNumber',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Customer Name: ${orderData['name']}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Father Name: ${orderData['fatherName'] ?? '-'}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'CNIC #: ${orderData['cnic'] ?? '-'}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Address: ${orderData['address']}',
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.SizedBox(height: 6),
+              pw.Text('Date: $date', textAlign: pw.TextAlign.center),
+              pw.Text(
+                'Cell: ${orderData['phone']}',
+                textAlign: pw.TextAlign.center,
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+
+          // Centered compact table (50/50 columns)
+          pw.Center(
+            child: pw.ConstrainedBox(
+              constraints: const pw.BoxConstraints.tightFor(width: 460),
+              child: pw.Table(
+                border: pw.TableBorder.all(color: black, width: 0.8),
+                columnWidths: const {
+                  0: pw.FlexColumnWidth(1),
+                  1: pw.FlexColumnWidth(1),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.black),
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          'DESCRIPTION',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.white,
+                          ),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          'DETAIL',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  row('Model', (orderData['bikeName'] ?? '').toString()),
+                  row('Year', '2025'),
+                  row('Chassis #', chassis),
+                  row('Engine #', engine),
+                  row('Color', color),
+                ],
+              ),
+            ),
+          ),
+
+          // Half-width signature lines (centered layout)
+          pw.SizedBox(height: 24),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
+            children: [
+              pw.Column(
+                children: [
+                  pw.SizedBox(height: 24),
+                  pw.Container(width: 140, height: 1, color: black),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Customer Signature',
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+              pw.Column(
+                children: [
+                  pw.SizedBox(height: 24),
+                  pw.Container(width: 140, height: 1, color: black),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Dealer Signature',
+                    style: const pw.TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 10),
+
+          // T&C (centered)
+          pw.Text(
+            'Terms & Conditions',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Text(
+            '1. Dealership will not be responsible for any damages claimed after accepting the delivery',
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+          pw.Text(
+            '2. For after sales services call Evee Customer Support on (+92 325 2292 290)',
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  return pdf.save();
+}
+
+/// Simple holder for one variant row inside the admin dialog
+class _VariantRowData {
+  final TextEditingController chassisCtrl;
+  final TextEditingController engineCtrl;
+  final TextEditingController colorCtrl;
+  _VariantRowData({String chassis = '', String engine = '', String color = ''})
+    : chassisCtrl = TextEditingController(text: chassis),
+      engineCtrl = TextEditingController(text: engine),
+      colorCtrl = TextEditingController(text: color);
+}
 
 class OrderPage extends StatefulWidget {
   static const route = '/order';
@@ -20,6 +515,25 @@ class OrderPage extends StatefulWidget {
 class _OrderPageState extends State<OrderPage> {
   late final MouseFXController _fx;
   final ScrollController _scroll = ScrollController();
+
+  // 🔐 Hidden admin login via 5 taps on logo (within 4 seconds)
+  int _logoTapCount = 0;
+  DateTime? _firstLogoTapAt;
+  void _onLogoTap(BuildContext context) {
+    final now = DateTime.now();
+    if (_firstLogoTapAt == null ||
+        now.difference(_firstLogoTapAt!) > const Duration(seconds: 4)) {
+      _firstLogoTapAt = now;
+      _logoTapCount = 1;
+    } else {
+      _logoTapCount++;
+    }
+    if (_logoTapCount >= 5) {
+      _logoTapCount = 0;
+      _firstLogoTapAt = null;
+      _showAdminLoginDialog(context);
+    }
+  }
 
   // Firestore collections
   CollectionReference<Map<String, dynamic>> get _bikesCol =>
@@ -35,6 +549,110 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  /// ---------------- Numbering + TEXT helpers ----------------
+
+  /// Atomically fetch next sequence value for a field and increment it.
+  /// Uses document: meta/counters  (fields: invoice, chalan)
+  Future<int> _nextSeq(String field) async {
+    final ref = FirebaseFirestore.instance.collection('meta').doc('counters');
+    return FirebaseFirestore.instance.runTransaction<int>((tx) async {
+      final snap = await tx.get(ref);
+      final data = (snap.data() ?? <String, dynamic>{});
+      final current = (data[field] is num) ? (data[field] as num).toInt() : 1;
+      final next = current + 1;
+      tx.set(ref, {...data, field: next}, SetOptions(merge: true));
+      return current; // assign current, then bump
+    });
+  }
+
+  String _fmtInvoice(int n) => 'INV ${n.toString().padLeft(2, '0')}';
+  String _fmtChalan(int n) => 'Mirabella/E-18/${n.toString().padLeft(3, '0')}';
+
+  String _composeInvoiceText({
+    required Map<String, dynamic> order,
+    required String invoiceNumber,
+    required String date,
+    required String chassis,
+    required String engine,
+    required String color,
+  }) {
+    return '''
+EVEE MIRABELLA
+Mirabella Complex, E-18 Gulshan-e-Sehat, Islamabad
+Contact: 03350928668
+
+INVOICE
+Invoice #: $invoiceNumber
+Date: $date
+Customer Name: ${order['name']}
+Father Name: ${order['fatherName'] ?? '-'}
+CNIC #: ${order['cnic'] ?? '-'}
+Cell: ${order['phone']}
+Address: ${order['address']}
+
+DESCRIPTION               DETAIL
+------------------------------------------------
+Model                     ${(order['bikeName'] ?? '').toString()}
+Year                      2025
+Chassis #                 $chassis
+Engine #                  $engine
+Color                     $color
+Amount Rs.                ${(order['bikePrice'] ?? '').toString()}
+Payment Mode              Cash
+
+Customer Signature                     Dealer Signature
+
+Terms & Conditions
+1. Dealership will not be re-buying any product
+2. For after sales services call Evee Customer Support on +92 3280408254 and Helpline +92 304111257
+''';
+  }
+
+  String _composeChalanText({
+    required Map<String, dynamic> order,
+    required String chalanNumber,
+    required String date,
+    required String chassis,
+    required String engine,
+    required String color,
+  }) {
+    return '''
+EVEE MIRABELLA
+Mirabella Complex, E-18 Gulshan-e-Sehat, Islamabad
+Contact: 03350928668
+
+DELIVERY CHALAN
+CHALAN #: $chalanNumber
+Date: $date
+Customer Name: ${order['name']}
+Father Name: ${order['fatherName'] ?? '-'}
+CNIC #: ${order['cnic'] ?? '-'}
+Cell: ${order['phone']}
+Address: ${order['address']}
+
+DESCRIPTION               DETAIL
+------------------------------------------------
+Model                     ${(order['bikeName'] ?? '').toString()}
+Year                      2025
+Chassis #                 $chassis
+Engine #                  $engine
+Color                     $color
+
+Customer Signature                     Dealer Signature
+
+Terms & Conditions
+1. Dealership will not be responsible for any damages claimed after accepting the delivery
+2. For after sales services call Evee Customer Support on (+92 325 2292 290)
+''';
+  }
+
+  /// ---------------- Helpers ----------------
+
+  String _safeFile(String s) => s.replaceAll(
+    RegExp(r'[^\w\-.]+'),
+    '_',
+  ); // was used for storage; kept safe
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +662,7 @@ class _OrderPageState extends State<OrderPage> {
   @override
   void dispose() {
     _scroll.dispose();
+    _fx.dispose(); // avoid leak
     super.dispose();
   }
 
@@ -102,27 +721,39 @@ class _OrderPageState extends State<OrderPage> {
                 icon: const Icon(Icons.arrow_back_rounded),
                 onPressed: () => Navigator.pop(context),
               ),
-              title: const Logo(),
+              // 🔽 Logo tappable: 5 taps -> admin login dialog
+              title: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _onLogoTap(context),
+                child: const Logo(),
+              ),
+              // 🔼
               actions: [
                 if (_firebaseReady)
                   StreamBuilder<User?>(
                     stream: FirebaseAuth.instance.authStateChanges(),
                     builder: (context, snap) {
                       final user = snap.data;
+
+                      // Logged-out: no lock/open-lock button
                       if (user == null) {
-                        return IconButton(
-                          tooltip: 'Admin sign in',
-                          icon: const Icon(Icons.lock_open_rounded),
-                          onPressed: () => _showAdminLoginDialog(context),
-                        );
+                        return const SizedBox.shrink();
                       }
+
+                      // Logged-in: show admin actions
                       return Row(
                         children: [
-                          // Orders panel button (admin only)
+                          // Orders panel (admin only)
                           IconButton(
                             tooltip: 'View Orders',
                             icon: const Icon(Icons.list_alt_rounded),
                             onPressed: () => _openOrdersPanel(context),
+                          ),
+                          // NEW: Docs panel (invoice/chalan text)
+                          IconButton(
+                            tooltip: 'View Docs (Invoice & Chalan Text)',
+                            icon: const Icon(Icons.description_rounded),
+                            onPressed: () => _openDocsPanel(context),
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -140,20 +771,8 @@ class _OrderPageState extends State<OrderPage> {
                     },
                   )
                 else
-                  IconButton(
-                    tooltip:
-                        'Admin disabled (Firebase not initialized in main.dart)',
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Admin features are disabled because Firebase is not initialized.',
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.lock_outline_rounded),
-                  ),
+                  // Firebase not initialized: don't show any lock button
+                  const SizedBox.shrink(),
                 const SizedBox(width: 8),
               ],
             ),
@@ -251,7 +870,7 @@ class _OrderPageState extends State<OrderPage> {
                                 final b = Bike.fromDoc(docs[i]);
                                 return _BikeCard(
                                   bike: b,
-                                  // UPDATED: push full page instead of dialog
+                                  // push full page instead of dialog
                                   onViewDetails: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
@@ -526,8 +1145,33 @@ class _OrderPageState extends State<OrderPage> {
     final image2Ctrl = TextEditingController(text: g.isNotEmpty ? g[0] : '');
     final image3Ctrl = TextEditingController(text: g.length > 1 ? g[1] : '');
     final image4Ctrl = TextEditingController(text: g.length > 2 ? g[2] : '');
-    // NEW: details field
+    // details field
     final detailsCtrl = TextEditingController(text: existing?.details ?? '');
+
+    // ---------- load existing variants ----------
+    final List<_VariantRowData> variantRows = [];
+    if (existing != null) {
+      try {
+        final snap = await _bikesCol.doc(existing.id).get();
+        final data = snap.data();
+        final raw = (data?['variants'] as List?) ?? const [];
+        for (final v in raw) {
+          final m = Map<String, dynamic>.from(v as Map);
+          variantRows.add(
+            _VariantRowData(
+              chassis: (m['chassis'] ?? '').toString(),
+              engine: (m['engine'] ?? '').toString(),
+              color: (m['color'] ?? '').toString(),
+            ),
+          );
+        }
+      } catch (_) {
+        // ignore; start empty
+      }
+    }
+    if (variantRows.isEmpty) {
+      variantRows.add(_VariantRowData());
+    }
     final isEdit = existing != null;
 
     await showDialog(
@@ -536,6 +1180,103 @@ class _OrderPageState extends State<OrderPage> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            void addVariant() =>
+                setDialogState(() => variantRows.add(_VariantRowData()));
+            void removeVariant(int i) =>
+                setDialogState(() => variantRows.removeAt(i));
+
+            // ---------- Stacked layout for variants ----------
+            Widget variantsSection() {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 14),
+                  Row(
+                    children: const [
+                      Icon(Icons.build_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Variants (admin-only)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Add any number of entries. Each row = one variant (Chassis, Engine, Color). These are hidden from customers.',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 10),
+
+                  Column(
+                    children: List.generate(variantRows.length, (i) {
+                      final row = variantRows[i];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.035),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.08),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            _FxTextField(
+                              controller: row.chassisCtrl,
+                              label: 'Chassis No',
+                              icon: Icons.confirmation_number_rounded,
+                            ),
+                            const SizedBox(height: 8),
+                            _FxTextField(
+                              controller: row.engineCtrl,
+                              label: 'Engine No',
+                              icon: Icons.settings_rounded,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _FxTextField(
+                                    controller: row.colorCtrl,
+                                    label: 'Color',
+                                    icon: Icons.color_lens_rounded,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  tooltip: 'Remove',
+                                  onPressed: variantRows.length > 1
+                                      ? () => removeVariant(i)
+                                      : null,
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: addVariant,
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Add Variant'),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              );
+            }
+
             return _GlassDialog(
               title: Row(
                 children: [
@@ -611,6 +1352,9 @@ class _OrderPageState extends State<OrderPage> {
                     label: 'Image 4 URL',
                     icon: Icons.image_rounded,
                   ),
+
+                  // Variants editor
+                  variantsSection(),
                 ],
               ),
               actions: [
@@ -643,6 +1387,23 @@ class _OrderPageState extends State<OrderPage> {
                       image4Ctrl.text.trim(),
                     ].where((s) => s.startsWith('http')).toList();
 
+                    // Gather variants (skip fully empty rows)
+                    final variants = variantRows
+                        .map(
+                          (r) => {
+                            'chassis': r.chassisCtrl.text.trim(),
+                            'engine': r.engineCtrl.text.trim(),
+                            'color': r.colorCtrl.text.trim(),
+                          },
+                        )
+                        .where(
+                          (m) =>
+                              (m['chassis'] as String).isNotEmpty ||
+                              (m['engine'] as String).isNotEmpty ||
+                              (m['color'] as String).isNotEmpty,
+                        )
+                        .toList();
+
                     try {
                       if (isEdit) {
                         await _bikesCol.doc(existing!.id).update({
@@ -650,7 +1411,8 @@ class _OrderPageState extends State<OrderPage> {
                           'price': price,
                           'imageUrl': url,
                           'gallery': gallery,
-                          'details': detailsCtrl.text.trim(), // NEW
+                          'details': detailsCtrl.text.trim(),
+                          'variants': variants,
                           'updatedAt': FieldValue.serverTimestamp(),
                         });
                       } else {
@@ -659,7 +1421,8 @@ class _OrderPageState extends State<OrderPage> {
                           'price': price,
                           'imageUrl': url,
                           'gallery': gallery,
-                          'details': detailsCtrl.text.trim(), // NEW
+                          'details': detailsCtrl.text.trim(),
+                          'variants': variants,
                           'createdAt': FieldValue.serverTimestamp(),
                         });
                       }
@@ -681,17 +1444,24 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  // ---------------- Booking dialog (message-only; no Firestore write) ----------------
+  // ---------------- Booking dialog (saves order; no auth needed) ----------------
   Future<void> _openBookingDialog(BuildContext context, Bike bike) async {
-    // ✅ Booking dialog now always opens (even if Firebase isn't initialized).
-    //    "Done" shows a centered circular confirmation UI (no saving).
-
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController();
+    final fatherCtrl = TextEditingController(); // NEW
+    final cnicCtrl = TextEditingController(); // NEW
     final emailCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final addressCtrl = TextEditingController();
     int qty = 1;
+
+    String? _validateCnic(String? v) {
+      final s = (v ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+      if (s.isEmpty) return 'Required';
+      // accept 13 digits (basic)
+      if (s.length != 13) return 'Enter 13-digit CNIC';
+      return null;
+    }
 
     await showDialog(
       context: context,
@@ -722,6 +1492,22 @@ class _OrderPageState extends State<OrderPage> {
                         icon: Icons.person_rounded,
                         validator: (v) =>
                             (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 10),
+                      _FxTextField(
+                        controller: fatherCtrl,
+                        label: 'Father name',
+                        icon: Icons.family_restroom_rounded,
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 10),
+                      _FxTextField(
+                        controller: cnicCtrl,
+                        label: 'ID Card (CNIC) – 13 digits',
+                        icon: Icons.badge_rounded,
+                        keyboardType: TextInputType.number,
+                        validator: _validateCnic,
                       ),
                       const SizedBox(height: 10),
                       _FxTextField(
@@ -773,14 +1559,33 @@ class _OrderPageState extends State<OrderPage> {
                   onTap: () => Navigator.pop(context),
                 ),
                 _PrimaryButton(
-                  text: 'Done',
-                  onTap: () {
-                    // Keep validation (optional). Remove next 2 lines to bypass.
+                  text: 'Place Order',
+                  onTap: () async {
                     if (!formKey.currentState!.validate()) return;
 
-                    // Close the form dialog, then show centered circular success
-                    Navigator.pop(context);
-                    _showBookingReceivedDialog(context);
+                    try {
+                      await _createOrderPublic(
+                        bike: bike,
+                        name: nameCtrl.text.trim(),
+                        fatherName: fatherCtrl.text.trim(), // NEW
+                        cnic: cnicCtrl.text.trim(), // NEW
+                        email: emailCtrl.text.trim(),
+                        phone: phoneCtrl.text.trim(),
+                        address: addressCtrl.text.trim(),
+                        quantity: qty,
+                      );
+
+                      if (context.mounted) {
+                        Navigator.pop(context); // close form
+                        _showBookingReceivedDialog(context); // success bubble
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Order failed: $e')),
+                        );
+                      }
+                    }
                   },
                 ),
               ],
@@ -789,6 +1594,36 @@ class _OrderPageState extends State<OrderPage> {
         );
       },
     );
+  }
+
+  /// Writes the order to Firestore WITHOUT requiring auth
+  Future<String> _createOrderPublic({
+    required Bike bike,
+    required String name,
+    required String fatherName, // NEW
+    required String cnic, // NEW
+    required String email,
+    required String phone,
+    required String address,
+    required int quantity,
+  }) async {
+    final doc = await _ordersCol.add({
+      'name': name,
+      'fatherName': fatherName, // NEW
+      'cnic': cnic, // NEW
+      'email': email,
+      'phone': phone,
+      'address': address,
+      'quantity': quantity,
+      'bikeId': bike.id,
+      'bikeName': bike.name,
+      'bikePrice': bike.price,
+      'bikeImageUrl': bike.imageUrl,
+      'status': 'new',
+      'createdAt': FieldValue.serverTimestamp(),
+      'source': 'web',
+    });
+    return doc.id;
   }
 
   // ---------------- Centered circular confirmation popup ----------------
@@ -813,23 +1648,18 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  // ---------- URL validator (Cloudinary-friendly) ----------
-
+  // ---------- URL validator ----------
   bool _looksLikeUrl(String s) {
     if (!s.startsWith('https://')) return false;
 
     final uri = Uri.tryParse(s);
     if (uri == null || uri.host.isEmpty) return false;
 
-    // Cloudinary
     if (uri.host.endsWith('res.cloudinary.com')) return true;
-
-    // Common CDNs that often serve images with query params
-    if (uri.host.contains('firebasestorage.googleapis.com')) return true;
     if (uri.host.contains('images.unsplash.com')) return true;
+    if (uri.host.contains('firebasestorage.googleapis.com')) return true;
     if (uri.host.startsWith('cdn.') || uri.host.contains('.cdn.')) return true;
 
-    // Fallback: allow typical image extensions
     final p = uri.path.toLowerCase();
     return p.endsWith('.png') ||
         p.endsWith('.jpg') ||
@@ -838,8 +1668,475 @@ class _OrderPageState extends State<OrderPage> {
         p.endsWith('.gif');
   }
 
-  // ---------------- Orders panel (admin) ----------------
+  // ---------------- Inquiry Dialog (auto-sync variant + exclude already-used)
+  //                 -> TEXT storage + auto numbers
+  // -------------------------------------------------------
+  Future<void> _openInquiryDialog(
+    BuildContext context,
+    Map<String, dynamic> orderData,
+    String orderId,
+  ) async {
+    // Get bike variants
+    final bikeId = orderData['bikeId'] as String;
+    final bikeSnap = await _bikesCol.doc(bikeId).get();
+    final bikeData = bikeSnap.data();
+    final rawVariants = (bikeData?['variants'] as List?) ?? [];
 
+    if (rawVariants.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No variants available for this bike')),
+      );
+      return;
+    }
+
+    // Load "already taken" variants by other orders for this bike
+    final takenChassis = <String>{};
+    final ordersForBike = await _ordersCol
+        .where('bikeId', isEqualTo: bikeId)
+        .get();
+
+    for (final od in ordersForBike.docs) {
+      if (od.id == orderId) continue; // allow re-open for same order
+      final m = od.data();
+      final c = (m['selectedChassis'] ?? m['chassis'] ?? '').toString();
+      if (c.isNotEmpty) takenChassis.add(c);
+    }
+
+    // Normalize and filter out taken variants
+    List<Map<String, String>> variants = rawVariants
+        .map((v) {
+          final m = Map<String, dynamic>.from(v as Map);
+          return {
+            'chassis': (m['chassis'] ?? '').toString(),
+            'engine': (m['engine'] ?? '').toString(),
+            'color': (m['color'] ?? '').toString(),
+          };
+        })
+        .where(
+          (v) =>
+              v['chassis']!.isNotEmpty && !takenChassis.contains(v['chassis']!),
+        )
+        .toList();
+
+    // Ensure order's previous selection remains available
+    final ownSelectedChassis = (orderData['selectedChassis'] ?? '').toString();
+    final ownSelectedEngine = (orderData['selectedEngine'] ?? '').toString();
+    final ownSelectedColor = (orderData['selectedColor'] ?? '').toString();
+    if (ownSelectedChassis.isNotEmpty &&
+        !variants.any((v) => v['chassis'] == ownSelectedChassis)) {
+      variants = [
+        {
+          'chassis': ownSelectedChassis,
+          'engine': ownSelectedEngine,
+          'color': ownSelectedColor,
+        },
+        ...variants,
+      ];
+    }
+
+    if (variants.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All variants for this bike are already assigned.'),
+        ),
+      );
+      return;
+    }
+
+    String? selectedChassis = ownSelectedChassis.isNotEmpty
+        ? ownSelectedChassis
+        : null;
+    String? selectedEngine = ownSelectedEngine.isNotEmpty
+        ? ownSelectedEngine
+        : null;
+    String? selectedColor = ownSelectedColor.isNotEmpty
+        ? ownSelectedColor
+        : null;
+
+    Map<String, String>? _findBy(String key, String? value) {
+      if (value == null) return null;
+      for (final v in variants) {
+        if ((v[key] ?? '') == value) return v;
+      }
+      return null;
+    }
+
+    void _syncFromVariant(
+      Map<String, String>? v,
+      void Function(void Function()) setState,
+    ) {
+      if (v == null) return;
+      setState(() {
+        selectedChassis = v['chassis'];
+        selectedEngine = v['engine'];
+        selectedColor = v['color'];
+      });
+    }
+
+    // Dropdown options (unique)
+    final chassisOptions = variants.map((v) => v['chassis']!).toSet().toList();
+    final engineOptions = variants.map((v) => v['engine']!).toSet().toList();
+    final colorOptions = variants.map((v) => v['color']!).toSet().toList();
+
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return _GlassDialog(
+              title: Row(
+                children: const [
+                  Icon(Icons.assignment_rounded, size: 18),
+                  SizedBox(width: 8),
+                  Flexible(child: Text('Order Inquiry')),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Customer: ${orderData['name']}\nBike: ${orderData['bikeName']}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Chassis Dropdown
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.12)),
+                      color: Colors.white.withOpacity(0.04),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value:
+                            selectedChassis != null &&
+                                chassisOptions.contains(selectedChassis)
+                            ? selectedChassis
+                            : null,
+                        hint: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Select Chassis Number'),
+                        ),
+                        isExpanded: true,
+                        items: chassisOptions.map((chassis) {
+                          return DropdownMenuItem<String>(
+                            value: chassis,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Text(chassis),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          selectedChassis = value;
+                          _syncFromVariant(_findBy('chassis', value), setState);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Engine Dropdown
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.12)),
+                      color: Colors.white.withOpacity(0.04),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value:
+                            selectedEngine != null &&
+                                engineOptions.contains(selectedEngine)
+                            ? selectedEngine
+                            : null,
+                        hint: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Select Engine Number'),
+                        ),
+                        isExpanded: true,
+                        items: engineOptions.map((engine) {
+                          return DropdownMenuItem<String>(
+                            value: engine,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Text(engine),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          selectedEngine = value;
+                          _syncFromVariant(_findBy('engine', value), setState);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Color Dropdown
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.12)),
+                      color: Colors.white.withOpacity(0.04),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value:
+                            selectedColor != null &&
+                                colorOptions.contains(selectedColor)
+                            ? selectedColor
+                            : null,
+                        hint: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Select Color'),
+                        ),
+                        isExpanded: true,
+                        items: colorOptions.map((color) {
+                          return DropdownMenuItem<String>(
+                            value: color,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Text(color),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          selectedColor = value;
+                          _syncFromVariant(_findBy('color', value), setState);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Action Buttons Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              (selectedChassis != null &&
+                                  selectedEngine != null &&
+                                  selectedColor != null)
+                              ? () async {
+                                  // Persist the chosen variant on the order so it is "taken"
+                                  await _ordersCol.doc(orderId).update({
+                                    'selectedChassis': selectedChassis,
+                                    'selectedEngine': selectedEngine,
+                                    'selectedColor': selectedColor,
+                                    'updatedAt': FieldValue.serverTimestamp(),
+                                  });
+
+                                  // Create + save Invoice TEXT & meta
+                                  final now = DateTime.now();
+                                  final dateStr =
+                                      '${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${(now.year % 100).toString().padLeft(2, '0')}';
+
+                                  final seq = await _nextSeq('invoice');
+                                  final invoiceNumber = _fmtInvoice(seq);
+
+                                  final text = _composeInvoiceText(
+                                    order: orderData
+                                      ..addAll({
+                                        'selectedChassis': selectedChassis,
+                                        'selectedEngine': selectedEngine,
+                                        'selectedColor': selectedColor,
+                                      }),
+                                    invoiceNumber: invoiceNumber,
+                                    date: dateStr,
+                                    chassis: selectedChassis!,
+                                    engine: selectedEngine!,
+                                    color: selectedColor!,
+                                  );
+
+                                  await _ordersCol.doc(orderId).update({
+                                    'invoice': {
+                                      'number': invoiceNumber,
+                                      'dateStr': dateStr,
+                                      'text': text,
+                                    },
+                                    'updatedAt': FieldValue.serverTimestamp(),
+                                  });
+
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Invoice saved as text in Firestore.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  Navigator.pop(context);
+                                  _generateInvoice(
+                                    context,
+                                    orderData,
+                                    orderId,
+                                    selectedChassis!,
+                                    selectedEngine!,
+                                    selectedColor!,
+                                    invoiceNumber: invoiceNumber,
+                                    dateStr: dateStr,
+                                  );
+                                }
+                              : null,
+                          icon: const Icon(Icons.receipt_rounded),
+                          label: const Text('Generate Invoice'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              (selectedChassis != null &&
+                                  selectedEngine != null &&
+                                  selectedColor != null)
+                              ? () async {
+                                  // Persist the chosen variant on the order so it is "taken"
+                                  await _ordersCol.doc(orderId).update({
+                                    'selectedChassis': selectedChassis,
+                                    'selectedEngine': selectedEngine,
+                                    'selectedColor': selectedColor,
+                                    'updatedAt': FieldValue.serverTimestamp(),
+                                  });
+
+                                  // Create + save Chalan TEXT & meta
+                                  final now = DateTime.now();
+                                  final dateStr =
+                                      '${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${(now.year % 100).toString().padLeft(2, '0')}';
+
+                                  final seq = await _nextSeq('chalan');
+                                  final chalanNumber = _fmtChalan(seq);
+
+                                  final text = _composeChalanText(
+                                    order: orderData
+                                      ..addAll({
+                                        'selectedChassis': selectedChassis,
+                                        'selectedEngine': selectedEngine,
+                                        'selectedColor': selectedColor,
+                                      }),
+                                    chalanNumber: chalanNumber,
+                                    date: dateStr,
+                                    chassis: selectedChassis!,
+                                    engine: selectedEngine!,
+                                    color: selectedColor!,
+                                  );
+
+                                  await _ordersCol.doc(orderId).update({
+                                    'chalan': {
+                                      'number': chalanNumber,
+                                      'dateStr': dateStr,
+                                      'text': text,
+                                    },
+                                    'updatedAt': FieldValue.serverTimestamp(),
+                                  });
+
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Delivery Chalan saved as text in Firestore.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  Navigator.pop(context);
+                                  _generateDeliveryChalan(
+                                    context,
+                                    orderData,
+                                    orderId,
+                                    selectedChassis!,
+                                    selectedEngine!,
+                                    selectedColor!,
+                                    chalanNumber: chalanNumber,
+                                    dateStr: dateStr,
+                                  );
+                                }
+                              : null,
+                          icon: const Icon(Icons.local_shipping_rounded),
+                          label: const Text('Generate Chalan'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                _GhostButton(
+                  text: 'Close',
+                  onTap: () => Navigator.pop(context),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ---------------- Generate Invoice (uses provided number/date) ----------------
+  Future<void> _generateInvoice(
+    BuildContext context,
+    Map<String, dynamic> orderData,
+    String orderId,
+    String chassis,
+    String engine,
+    String color, {
+    required String invoiceNumber,
+    required String dateStr,
+  }) async {
+    await showDialog(
+      context: context,
+      builder: (context) => _InvoiceDialog(
+        orderData: orderData,
+        invoiceNumber: invoiceNumber,
+        date: dateStr,
+        chassis: chassis,
+        engine: engine,
+        color: color,
+      ),
+    );
+  }
+
+  // ---------------- Generate Delivery Chalan (uses provided number/date) ----------------
+  Future<void> _generateDeliveryChalan(
+    BuildContext context,
+    Map<String, dynamic> orderData,
+    String orderId,
+    String chassis,
+    String engine,
+    String color, {
+    required String chalanNumber,
+    required String dateStr,
+  }) async {
+    await showDialog(
+      context: context,
+      builder: (context) => _DeliveryChalanDialog(
+        orderData: orderData,
+        chalanNumber: chalanNumber,
+        date: dateStr,
+        chassis: chassis,
+        engine: engine,
+        color: color,
+      ),
+    );
+  }
+
+  // ---------------- Orders panel (admin) ----------------
   Future<void> _openOrdersPanel(BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
     if (!_firebaseReady || user == null) {
@@ -868,7 +2165,6 @@ class _OrderPageState extends State<OrderPage> {
                     color: Colors.white.withOpacity(0.06),
                     border: Border.all(color: Colors.white.withOpacity(0.10)),
                     boxShadow: const [
-                      // bluish glow
                       BoxShadow(
                         color: Color(0x332EA8FF),
                         blurRadius: 32,
@@ -1014,38 +2310,86 @@ class _OrderPageState extends State<OrderPage> {
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
+                                        const SizedBox(height: 8),
+                                        // Actions
+                                        Row(
+                                          children: [
+                                            ElevatedButton.icon(
+                                              onPressed: () =>
+                                                  _openInquiryDialog(
+                                                    context,
+                                                    data,
+                                                    d.id,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.assignment_rounded,
+                                                size: 16,
+                                              ),
+                                              label: const Text(
+                                                'Inquiry',
+                                                style: TextStyle(fontSize: 12),
+                                              ),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(
+                                                  0xFF3B82F6,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                minimumSize: Size.zero,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            PopupMenuButton<String>(
+                                              onSelected: (v) async {
+                                                if (v == 'delete') {
+                                                  await _ordersCol
+                                                      .doc(d.id)
+                                                      .delete();
+                                                } else {
+                                                  await _ordersCol
+                                                      .doc(d.id)
+                                                      .update({'status': v});
+                                                }
+                                              },
+                                              itemBuilder: (context) => const [
+                                                PopupMenuItem(
+                                                  value: 'new',
+                                                  child: Text('Mark as New'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'processing',
+                                                  child: Text(
+                                                    'Mark as Processing',
+                                                  ),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'done',
+                                                  child: Text('Mark as Done'),
+                                                ),
+                                                PopupMenuDivider(),
+                                                PopupMenuItem(
+                                                  value: 'delete',
+                                                  child: Text('Delete Order'),
+                                                ),
+                                              ],
+                                              child: Chip(
+                                                label: Text(status),
+                                                labelStyle: const TextStyle(
+                                                  color: Colors.white,
+                                                ),
+                                                backgroundColor: status == 'new'
+                                                    ? Colors.orange
+                                                    : status == 'processing'
+                                                    ? Colors.blue
+                                                    : Colors.green,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ],
-                                    ),
-                                    trailing: PopupMenuButton<String>(
-                                      onSelected: (v) async {
-                                        if (v == 'delete') {
-                                          await _ordersCol.doc(d.id).delete();
-                                        } else {
-                                          await _ordersCol.doc(d.id).update({
-                                            'status': v,
-                                          });
-                                        }
-                                      },
-                                      itemBuilder: (context) => const [
-                                        PopupMenuItem(
-                                          value: 'new',
-                                          child: Text('Mark as New'),
-                                        ),
-                                        PopupMenuItem(
-                                          value: 'processing',
-                                          child: Text('Mark as Processing'),
-                                        ),
-                                        PopupMenuItem(
-                                          value: 'done',
-                                          child: Text('Mark as Done'),
-                                        ),
-                                        PopupMenuDivider(),
-                                        PopupMenuItem(
-                                          value: 'delete',
-                                          child: Text('Delete Order'),
-                                        ),
-                                      ],
-                                      child: Chip(label: Text(status)),
                                     ),
                                   );
                                 },
@@ -1064,74 +2408,952 @@ class _OrderPageState extends State<OrderPage> {
       },
     );
   }
-}
 
-// ---------------- Models & UI ----------------
-
-class Bike {
-  final String id;
-  final String name;
-  final String price;
-  final String imageUrl;
-  final List<String> gallery; // up to 3 extra images (optional)
-  final String details; // NEW
-
-  Bike({
-    required this.id,
-    required this.name,
-    required this.price,
-    required this.imageUrl,
-    required this.gallery,
-    required this.details, // NEW
-  });
-
-  factory Bike.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
-    final data = d.data() ?? {};
-    final mainUrl = (data['imageUrl'] ?? '').toString();
-
-    List<String> _urls(dynamic v) {
-      if (v is List) {
-        return v
-            .map((e) => e?.toString() ?? '')
-            .where((s) => s.startsWith('http'))
-            .cast<String>()
-            .toList();
-      }
-      return const [];
+  // ---------------- NEW: Docs panel (Invoices & Chalans text) ----------------
+  Future<void> _openDocsPanel(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (!_firebaseReady || user == null) {
+      _showAdminLoginDialog(context);
+      return;
     }
 
-    // Prefer 'gallery' array; also read common alt fields for backward compat.
-    final gallery = <String>{}
-      ..addAll(_urls(data['gallery']))
-      ..addAll(_urls(data['images']))
-      ..addAll(_urls(data['extraImages']));
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (context) {
+        final size = MediaQuery.of(context).size;
+        final maxH = size.height * 0.88;
+        final maxW = size.width < 600 ? size.width - 24 : 960.0;
 
-    for (final k in const ['image2', 'image3', 'image4']) {
-      final v = (data[k] ?? '').toString();
-      if (v.startsWith('http')) gallery.add(v);
-    }
+        return Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          backgroundColor: Colors.transparent,
+          child: SafeArea(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    border: Border.all(color: Colors.white.withOpacity(0.10)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x332EA8FF),
+                        blurRadius: 32,
+                        offset: Offset(0, 18),
+                      ),
+                    ],
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: maxW,
+                      maxHeight: maxH,
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: Colors.white.withOpacity(0.08),
+                              ),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.description_rounded, size: 18),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Docs (Invoices & Delivery Chalans)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const Spacer(),
+                              _GhostButton(
+                                text: 'Close',
+                                onTap: () => Navigator.pop(context),
+                                dense: true,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                            stream: _ordersCol
+                                .orderBy('createdAt', descending: true)
+                                .snapshots(),
+                            builder: (context, snap) {
+                              if (snap.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              }
+                              if (snap.hasError) {
+                                return Center(
+                                  child: Text('Error: ${snap.error}'),
+                                );
+                              }
+                              final all = (snap.data?.docs ?? [])
+                                  .map((d) => {'id': d.id, ...d.data()})
+                                  .toList();
 
-    // Remove duplicates / main image
-    final cleaned = gallery.where((u) => u != mainUrl).toList();
+                              // Keep only those with invoice/chalan text
+                              final docs = all
+                                  .where(
+                                    (m) =>
+                                        (m['invoice']?['text'] ?? '')
+                                            .toString()
+                                            .trim()
+                                            .isNotEmpty ||
+                                        (m['chalan']?['text'] ?? '')
+                                            .toString()
+                                            .trim()
+                                            .isNotEmpty,
+                                  )
+                                  .toList();
 
-    // Keep at most 3 extras
-    final top3 = cleaned.take(3).toList();
+                              if (docs.isEmpty) {
+                                return const Center(
+                                  child: Text('No invoices or chalans yet.'),
+                                );
+                              }
 
-    // NEW: support multiple possible keys for details
-    final details =
-        (data['details'] ?? data['detail'] ?? data['description'] ?? '')
-            .toString();
+                              return ListView.separated(
+                                padding: const EdgeInsets.all(12),
+                                separatorBuilder: (_, __) => Divider(
+                                  color: Colors.white.withOpacity(0.06),
+                                ),
+                                itemCount: docs.length,
+                                itemBuilder: (context, i) {
+                                  final m = docs[i];
+                                  final name = (m['name'] ?? '').toString();
+                                  final phone = (m['phone'] ?? '').toString();
+                                  final bike = (m['bikeName'] ?? '').toString();
 
-    return Bike(
-      id: d.id,
-      name: (data['name'] ?? '').toString(),
-      price: (data['price'] ?? '').toString(),
-      imageUrl: mainUrl,
-      gallery: top3,
-      details: details, // NEW
+                                  final inv =
+                                      m['invoice'] as Map<String, dynamic>?;
+                                  final ch =
+                                      m['chalan'] as Map<String, dynamic>?;
+
+                                  return Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.035),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.08),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.person, size: 16),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(
+                                                '$name  •  $phone  •  $bike',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            if ((inv?['text'] ?? '')
+                                                .toString()
+                                                .trim()
+                                                .isNotEmpty)
+                                              OutlinedButton.icon(
+                                                icon: const Icon(
+                                                  Icons.receipt_long_rounded,
+                                                ),
+                                                label: Text(
+                                                  'Invoice: ${inv?['number'] ?? '-'}',
+                                                ),
+                                                onPressed: () => _showTextDocDialog(
+                                                  context,
+                                                  title:
+                                                      'Invoice — ${(inv?['number'] ?? '').toString()}',
+                                                  text: (inv?['text'] ?? '')
+                                                      .toString(),
+                                                ),
+                                              ),
+                                            if ((ch?['text'] ?? '')
+                                                .toString()
+                                                .trim()
+                                                .isNotEmpty)
+                                              OutlinedButton.icon(
+                                                icon: const Icon(
+                                                  Icons.local_shipping_outlined,
+                                                ),
+                                                label: Text(
+                                                  'Chalan: ${ch?['number'] ?? '-'}',
+                                                ),
+                                                onPressed: () => _showTextDocDialog(
+                                                  context,
+                                                  title:
+                                                      'Delivery Chalan — ${(ch?['number'] ?? '').toString()}',
+                                                  text: (ch?['text'] ?? '')
+                                                      .toString(),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showTextDocDialog(
+    BuildContext context, {
+    required String title,
+    required String text,
+  }) async {
+    await showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800, maxHeight: 700),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Copy',
+                      icon: const Icon(Icons.copy_rounded),
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: text));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Copied to clipboard'),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
+
+// ---------------- Invoice Dialog (A4 PDF printing) ----------------
+class _InvoiceDialog extends StatelessWidget {
+  final Map<String, dynamic> orderData;
+  final String invoiceNumber;
+  final String date;
+  final String chassis;
+  final String engine;
+  final String color;
+
+  const _InvoiceDialog({
+    required this.orderData,
+    required this.invoiceNumber,
+    required this.date,
+    required this.chassis,
+    required this.engine,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final maxW = size.width < 860 ? size.width - 24 : 800.0;
+    final maxH = size.height * 0.88;
+
+    // amount detail: numbers only (e.g., 99000)
+    final amountOnly = (orderData['bikePrice'] ?? '').toString().replaceAll(
+      RegExp(r'[^0-9]'),
+      '',
+    );
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.all(12),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Invoice',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.black),
+                  ),
+                ],
+              ),
+            ),
+
+            // Scrollable body
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.center, // center everything
+                  children: [
+                    // Logos + centered heading (2x logos)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Image.asset('assets/logo/mirabella.png', height: 100),
+                        const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'EVEE MIRABELLA',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                            Text(
+                              'Mirabella Complex, E-18 Gulshan-e-Sehat, Islamabad',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black,
+                              ),
+                            ),
+                            Text(
+                              'Contact: 03350928668',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black,
+                              ),
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'INVOICE',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Image.asset('assets/logo/evee.png', height: 100),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Meta (centered block)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Invoice #: $invoiceNumber',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'Customer Name: ${orderData['name']}',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'Father Name: ${orderData['fatherName'] ?? '-'}',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'CNIC #: ${orderData['cnic'] ?? '-'}',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'Address: ${orderData['address']}',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 6),
+                        Text('Date: $date', textAlign: TextAlign.center),
+                        Text(
+                          'Cell: ${orderData['phone']}',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Centered, narrower table with black header
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minWidth: 520,
+                          maxWidth: 560,
+                        ),
+                        child: Table(
+                          border: TableBorder.all(color: Colors.black),
+                          columnWidths: const {
+                            0: FlexColumnWidth(1), // 50/50
+                            1: FlexColumnWidth(1),
+                          },
+                          children: [
+                            const TableRow(
+                              decoration: BoxDecoration(color: Colors.black),
+                              children: [
+                                Padding(
+                                  padding: EdgeInsets.all(8.0),
+                                  child: Text(
+                                    'DESCRIPTION',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: EdgeInsets.all(8.0),
+                                  child: Text(
+                                    'DETAIL',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            _row(
+                              'Model',
+                              (orderData['bikeName'] ?? '').toString(),
+                            ),
+                            _row('Year', '2025'),
+                            _row('Chassis #', chassis),
+                            _row('Engine #', engine),
+                            _row('Color', color),
+                            _row('Amount Rs.', amountOnly), // numbers only
+                            _row(
+                              'Payment Mode (Cash/Credit card/Online)',
+                              'Cash',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Signature area (centered, half-width lines)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: const [
+                        _SigBlock(label: 'Customer Signature'),
+                        _SigBlock(label: 'Dealer Signature'),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Terms
+                    const Text(
+                      'Terms & Conditions',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const Text(
+                      '1. Dealership will not be re-buying any product',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 10, color: Colors.black),
+                    ),
+                    const Text(
+                      '2. For after sales services call Evee Customer Support on +92 3280408254 and Helpline +92 304111257',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 10, color: Colors.black),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Actions
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _printInvoicePdf,
+                    icon: const Icon(Icons.print),
+                    label: const Text('Print Invoice'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3B82F6),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static TableRow _row(String a, String b) => TableRow(
+    children: [
+      const Padding(
+        padding: EdgeInsets.all(8.0),
+        child: Text(
+          '', // will be replaced below via LayoutBuilder trick if needed
+        ),
+      ),
+      const Padding(padding: EdgeInsets.all(8.0), child: Text('')),
+    ],
+  );
+
+  Future<void> _printInvoicePdf() async {
+    final bytes = await buildInvoicePdfBytes(
+      orderData: orderData,
+      invoiceNumber: invoiceNumber,
+      date: date,
+      chassis: chassis,
+      engine: engine,
+      color: color,
+    );
+    await Printing.layoutPdf(
+      onLayout: (format) async => bytes,
+      name: 'invoice_$invoiceNumber.pdf',
+    );
+  }
+}
+
+// Small helper to render the centered signature line + label
+class _SigBlock extends StatelessWidget {
+  final String label;
+  const _SigBlock({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const [
+        SizedBox(height: 24),
+        SizedBox(width: 140, height: 1, child: ColoredBox(color: Colors.black)),
+        SizedBox(height: 4),
+        // Use label via parent Text
+      ],
+    );
+  }
+}
+
+// ---------------- Delivery Chalan Dialog (A4 PDF printing) ----------------
+class _DeliveryChalanDialog extends StatelessWidget {
+  final Map<String, dynamic> orderData;
+  final String chalanNumber;
+  final String date;
+  final String chassis;
+  final String engine;
+  final String color;
+
+  const _DeliveryChalanDialog({
+    required this.orderData,
+    required this.chalanNumber,
+    required this.date,
+    required this.chassis,
+    required this.engine,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final maxW = size.width < 860 ? size.width - 24 : 800.0;
+    final maxH = size.height * 0.88;
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.all(12),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Delivery Chalan',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.black),
+                  ),
+                ],
+              ),
+            ),
+
+            // Scrollable body
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.center, // ⬅ center everything
+                  children: [
+                    // ── Logos left/right + centered headings (2x logos) ────
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'assets/logo/mirabella.png',
+                          height: 100, // 2x bigger
+                        ),
+                        const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'EVEE MIRABELLA',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                            Text(
+                              'Mirabella Complex, E-18 Gulshan-e-Sehat, Islamabad',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black,
+                              ),
+                            ),
+                            Text(
+                              'Contact: 03350928668',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black,
+                              ),
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'DELIVERY CHALAN',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Image.asset(
+                          'assets/logo/evee.png',
+                          height: 100, // 2x bigger
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Meta block centered ─────────────────────────────────
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          'CHALAN #: $chalanNumber',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'Customer Name: ${orderData['name']}',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'Father Name: ${orderData['fatherName'] ?? '-'}',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'CNIC #: ${orderData['cnic'] ?? '-'}',
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          'Address: ${orderData['address']}',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 6),
+                        Text('Date: $date', textAlign: TextAlign.center),
+                        Text(
+                          'Cell: ${orderData['phone']}',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Table centered (narrower width) ────────────────────
+                    Center(
+                      child: SizedBox(
+                        width: 460, // smaller table, centered with text
+                        child: Table(
+                          border: TableBorder.all(color: Colors.black),
+                          columnWidths: const {
+                            0: FlexColumnWidth(1), // 50/50 columns
+                            1: FlexColumnWidth(1),
+                          },
+                          children: [
+                            const TableRow(
+                              decoration: BoxDecoration(color: Colors.black),
+                              children: [
+                                Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Text(
+                                    'DESCRIPTION',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Text(
+                                    'DETAIL',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            _row(
+                              'Model',
+                              (orderData['bikeName'] ?? '').toString(),
+                            ),
+                            _row('Year', '2025'),
+                            _row('Chassis #', chassis),
+                            _row('Engine #', engine),
+                            _row('Color', color),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ── Signature area centered (half-width lines) ─────────
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment
+                          .spaceEvenly, // center the two blocks
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: const [
+                            SizedBox(height: 24),
+                            SizedBox(
+                              width: 140,
+                              height: 1,
+                              child: ColoredBox(color: Colors.black),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Customer Signature',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.black),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: const [
+                            SizedBox(height: 24),
+                            SizedBox(
+                              width: 140,
+                              height: 1,
+                              child: ColoredBox(color: Colors.black),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Dealer Signature',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.black),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── Terms & Conditions (centered) ──────────────────────
+                    const Text(
+                      'Terms & Conditions',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const Text(
+                      '1. Dealership will not be responsible for any damages claimed after accepting the delivery',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 10, color: Colors.black),
+                    ),
+                    const Text(
+                      '2. For after sales services call Evee Customer Support on (+92 325 2292 290)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 10, color: Colors.black),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Footer actions
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _printChalanPdf(),
+                    icon: const Icon(Icons.print),
+                    label: const Text('Print Delivery Chalan'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3B82F6),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static TableRow _row(String a, String b) => TableRow(
+    children: [
+      Padding(
+        padding: const EdgeInsets.all(6),
+        child: Text(a, textAlign: TextAlign.center),
+      ),
+      Padding(
+        padding: const EdgeInsets.all(6),
+        child: Text(b, textAlign: TextAlign.center),
+      ),
+    ],
+  );
+
+  Future<void> _printChalanPdf() async {
+    final bytes = await buildChalanPdfBytes(
+      orderData: orderData,
+      chalanNumber: chalanNumber,
+      date: date,
+      chassis: chassis,
+      engine: engine,
+      color: color,
+    );
+    await Printing.layoutPdf(
+      onLayout: (f) async => bytes,
+      name: 'delivery_chalan_${orderData['name']}.pdf',
+    );
+  }
+}
+
+// ---------------- UI helpers ----------------
 
 class _FirebaseNotReadyBanner extends StatelessWidget {
   const _FirebaseNotReadyBanner();
@@ -1243,7 +3465,6 @@ class _BikeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white.withOpacity(0.1)),
         boxShadow: [
-          // bluish glow
           BoxShadow(
             color: const Color(0xFF2EA8FF).withOpacity(0.10),
             blurRadius: 18,
@@ -1319,7 +3540,6 @@ class _BikeCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // UPDATED: Check Details button (navigates to details page)
               _GradientButton(text: 'Check Details', onTap: onViewDetails),
             ],
           ),
@@ -1329,7 +3549,6 @@ class _BikeCard extends StatelessWidget {
   }
 }
 
-/// Simple network image with graceful fallback (+ progress)
 class _NetworkImageOrPlaceholder extends StatelessWidget {
   const _NetworkImageOrPlaceholder({required this.url});
   final String url;
@@ -1357,7 +3576,6 @@ class _NetworkImageOrPlaceholder extends StatelessWidget {
   );
 }
 
-/// Gradient CTA matching your main page style (BLUISH)
 class _GradientButton extends StatelessWidget {
   const _GradientButton({required this.text, required this.onTap});
   final String text;
@@ -1382,14 +3600,11 @@ class _GradientButton extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: radius,
               gradient: const LinearGradient(
-                colors: [
-                  Color(0xFF3B82F6),
-                  Color(0xFF60A5FA),
-                ], // blue → light blue
+                colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
               ),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x332EA8FF), // soft blue glow
+                  color: Color(0x332EA8FF),
                   blurRadius: 22,
                   offset: Offset(0, 10),
                 ),
@@ -1438,33 +3653,32 @@ class _GlassDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.all(12),
       backgroundColor: Colors.transparent,
       child: SafeArea(
-        // ⛔️ Keep dialog fixed; do NOT shift with keyboard
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.06),
-                      border: Border.all(color: Colors.white.withOpacity(0.10)),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x332EA8FF), // bluish glass glow
-                          blurRadius: 30,
-                          offset: Offset(0, 18),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        DefaultTextStyle.merge(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    border: Border.all(color: Colors.white.withOpacity(0.10)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x332EA8FF),
+                        blurRadius: 30,
+                        offset: Offset(0, 18),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min, // wrap content by default
+                    children: [
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+                        child: DefaultTextStyle.merge(
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -1474,38 +3688,44 @@ class _GlassDialog extends StatelessWidget {
                             children: [Expanded(child: title)],
                           ),
                         ),
-                        const SizedBox(height: 12),
+                      ),
 
-                        // ✅ Keyboard-aware, scrollable content (dialog stays put)
-                        Flexible(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final bottomInset = MediaQuery.of(
-                                context,
-                              ).viewInsets.bottom;
-                              return SingleChildScrollView(
-                                keyboardDismissBehavior:
-                                    ScrollViewKeyboardDismissBehavior.onDrag,
-                                physics: const BouncingScrollPhysics(),
-                                padding: EdgeInsets.only(
-                                  bottom: bottomInset + 16,
+                      // Content (scrollable, but only takes space it needs)
+                      Flexible(
+                        fit: FlexFit.loose, // <- key change vs Expanded
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final bottomInset = MediaQuery.of(
+                              context,
+                            ).viewInsets.bottom;
+                            return SingleChildScrollView(
+                              primary: false, // correct for nested scrollables
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              physics: const BouncingScrollPhysics(),
+                              padding: EdgeInsets.fromLTRB(
+                                18,
+                                0,
+                                18,
+                                16 +
+                                    bottomInset, // keep fields visible above keyboard
+                              ),
+                              child: ConstrainedBox(
+                                // keep width full; don't force height
+                                constraints: BoxConstraints(
+                                  minWidth: constraints.maxWidth,
                                 ),
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    minWidth: constraints.maxWidth,
-                                    // avoid over-expansion; let content scroll
-                                    maxHeight: constraints.maxHeight - 24,
-                                  ),
-                                  child: content,
-                                ),
-                              );
-                            },
-                          ),
+                                child: content,
+                              ),
+                            );
+                          },
                         ),
-                        const SizedBox(height: 14),
+                      ),
 
-                        // Wrap actions so they don't overflow on small screens
-                        Align(
+                      // Actions
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                        child: Align(
                           alignment: Alignment.centerRight,
                           child: Wrap(
                             alignment: WrapAlignment.end,
@@ -1514,8 +3734,8 @@ class _GlassDialog extends StatelessWidget {
                             children: actions,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1561,10 +3781,7 @@ class _FxTextField extends StatelessWidget {
     );
     final focused = OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(
-        color: Color(0xFF60A5FA),
-        width: 1.5,
-      ), // blue focus
+      borderSide: const BorderSide(color: Color(0xFF60A5FA), width: 1.5),
     );
 
     return TextFormField(
@@ -1575,7 +3792,6 @@ class _FxTextField extends StatelessWidget {
       maxLines: maxLines,
       validator: validator,
       onChanged: onChanged,
-      // better keyboard flow: next for single-line, newline for multi-line
       textInputAction: maxLines == 1
           ? TextInputAction.next
           : TextInputAction.newline,
@@ -1764,7 +3980,6 @@ class _PrimaryButton extends StatelessWidget {
           ),
       child: Ink(
         decoration: BoxDecoration(
-          // BLUISH gradient for primary actions
           gradient: const LinearGradient(
             colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
           ),
@@ -1809,9 +4024,9 @@ class _DangerButton extends StatelessWidget {
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          child: const Text(
-            'Delete',
-            style: TextStyle(
+          child: Text(
+            text,
+            style: const TextStyle(
               color: Color(0xFF0F0F23),
               fontWeight: FontWeight.w800,
             ),
@@ -1840,28 +4055,25 @@ class _CircleSuccess extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Outer gradient ring + glow
             Container(
               width: outerSize,
               height: outerSize,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)], // blue ring
+                  colors: [Color(0xFF3B82F6), Color(0xFF60A5FA)],
                 ),
-                boxShadow: const [
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x4D2EA8FF), // soft blue glow
+                    color: Color(0x4D2EA8FF),
                     blurRadius: 50,
                     spreadRadius: 4,
                   ),
                 ],
               ),
             ),
-
-            // Inner dark glassy circle
             Container(
               width: innerSize,
               height: innerSize,
@@ -1873,16 +4085,16 @@ class _CircleSuccess extends StatelessWidget {
                   BoxShadow(color: Color(0x332EA8FF), blurRadius: 28),
                 ],
               ),
-              child: Center(
+              child: const Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  padding: EdgeInsets.symmetric(horizontal: 18),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       Icon(
                         Icons.check_circle_rounded,
                         size: 66,
-                        color: Color(0xFF34D399), // emerald green check
+                        color: Color(0xFF34D399),
                       ),
                       SizedBox(height: 10),
                       Text(

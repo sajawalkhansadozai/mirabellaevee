@@ -2,8 +2,8 @@
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 
-// Reuse your Bike model (from orderbooking.dart)
-import 'orderbooking.dart' show Bike;
+// Use the shared Bike model (breaks circular import with orderbooking.dart)
+import 'models/bike.dart';
 
 // Reuse your FX layers & mouse cursor from your existing project
 import 'fx_shared.dart'; // MouseFX, MouseFXController, ParticlesLayer, ParallaxLayer, QuantumParticlesLayer, MouseFXOverlay, isDesktopLike
